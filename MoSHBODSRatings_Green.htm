@@ -156,6 +156,7 @@ footer{text-align:center;padding:18px 36px;font-size:12px;color:var(--text-dim);
       <option value="comb">Combined</option>
       <option value="off">Offensive</option>
       <option value="def">Defensive</option>
+      <option value="offdef">Offensive + Defensive</option>
       <option value="all">All Three</option>
     </select>
   </label>
@@ -351,7 +352,21 @@ function renderChart(rows){
 
   const KEYS=rt==='all'
     ?[['post_comb','Combined'],['post_off','Offensive'],['post_def','Defensive']]
+    :rt==='offdef'
+    ?[['post_off','Offensive'],['post_def','Defensive']]
     :[[`post_${rt}`,{comb:'Combined',off:'Offensive',def:'Defensive'}[rt]]];
+  // Dash patterns: solid=comb, dashed=off, dotted=def (used when >1 series per team)
+  const KEY_DASH={'post_comb':[],'post_off':[8,4],'post_def':[2,4]};
+
+  function smoothPts(pts){
+    if(pts.length<6)return pts;
+    const w=Math.max(5,Math.round(pts.length*0.05));
+    return pts.map((p,i)=>{
+      const lo=Math.max(0,i-w),hi=Math.min(pts.length-1,i+w);
+      let sum=0; for(let j=lo;j<=hi;j++)sum+=pts[j].y;
+      return{x:p.x,y:sum/(hi-lo+1)};
+    });
+  }
 
   const series=[];
   for(const team of [...sel]){
@@ -359,8 +374,10 @@ function renderChart(rows){
     if(!tr.length)continue;
     const col=TC[team]||'#888';
     for(const [key,kl] of KEYS){
+      const rawPts=tr.map(r=>({x:r.date,y:r[key]}));
       series.push({label:team+(KEYS.length>1?` (${kl})`:''),color:col,
-        pts:tr.map(r=>({x:r.date,y:r[key]}))});
+        dash:(rt==='all'||rt==='offdef')?KEY_DASH[key]:[],
+        pts:smooth?smoothPts(rawPts):rawPts});
     }
   }
 
@@ -438,6 +455,7 @@ function renderChart(rows){
     if(s.pts.length<2)continue;
     c.save(); c.globalAlpha=alpha;
     c.strokeStyle=s.color; c.lineWidth=series.length>12?1.4:2.0; c.lineJoin='round';
+    c.setLineDash(s.dash||[]);
 
     if(isArea){
       c.beginPath();
@@ -447,27 +465,9 @@ function renderChart(rows){
       c.closePath(); c.fillStyle=s.color+'18'; c.fill();
     }
 
-    // For smooth, thin to ~1 pt per 3px so bezier tension is visible; raw otherwise
-    const drawPts = (smooth && s.pts.length > pw/3)
-      ? s.pts.filter((_,i)=>i%Math.round(s.pts.length/(pw/3))===0)
-      : s.pts;
     c.beginPath();
-    if(smooth&&drawPts.length>3){
-      c.moveTo(xm(drawPts[0].x),ym(drawPts[0].y));
-      for(let i=0;i<drawPts.length-1;i++){
-        const p0=drawPts[Math.max(i-1,0)];
-        const p1=drawPts[i];
-        const p2=drawPts[i+1];
-        const p3=drawPts[Math.min(i+2,drawPts.length-1)];
-        const t=0.3;
-        const x0=xm(p0.x),y0=ym(p0.y),x1=xm(p1.x),y1=ym(p1.y);
-        const x2=xm(p2.x),y2=ym(p2.y),x3=xm(p3.x),y3=ym(p3.y);
-        c.bezierCurveTo(x1+t*(x2-x0)/2,y1+t*(y2-y0)/2,x2-t*(x3-x1)/2,y2-t*(y3-y1)/2,x2,y2);
-      }
-    } else {
-      c.moveTo(xm(s.pts[0].x),ym(s.pts[0].y));
-      for(const p of s.pts) c.lineTo(xm(p.x),ym(p.y));
-    }
+    c.moveTo(xm(s.pts[0].x),ym(s.pts[0].y));
+    for(const p of s.pts) c.lineTo(xm(p.x),ym(p.y));
     c.stroke(); c.restore();
   }
   c.restore();
@@ -486,11 +486,13 @@ function renderChart(rows){
       const row=i%perCol;
       const bx=ml+pw-8-(cols-1-col)*(lw+4)-lw;
       const by=mt+10+row*lh;
-      c.fillStyle=series[i].color; c.globalAlpha=.85;
-      c.fillRect(bx,by+3,13,9);
+      c.strokeStyle=series[i].color; c.lineWidth=2; c.globalAlpha=.9;
+      c.setLineDash(series[i].dash||[]);
+      c.beginPath(); c.moveTo(bx,by+8); c.lineTo(bx+16,by+8); c.stroke();
+      c.setLineDash([]);
       c.globalAlpha=1; c.fillStyle='#7aaa80'; c.textAlign='left';
       const lbl=series[i].label.length>20?series[i].label.slice(0,18)+'…':series[i].label;
-      c.fillText(lbl,bx+18,by+12);
+      c.fillText(lbl,bx+20,by+12);
     }
   }
 
@@ -500,7 +502,7 @@ function renderChart(rows){
   /* Title */
   const yf=document.getElementById('yf').value;
   const yt=document.getElementById('yt').value;
-  const rl=rt==='all'?'All Ratings':{comb:'Combined',off:'Offensive',def:'Defensive'}[rt];
+  const rl=rt==='all'?'All Ratings':rt==='offdef'?'Offensive + Defensive':{comb:'Combined',off:'Offensive',def:'Defensive'}[rt];
   document.getElementById('ctitle').textContent=`${rl} Ratings · ${yf}–${yt}`;
 }
 
