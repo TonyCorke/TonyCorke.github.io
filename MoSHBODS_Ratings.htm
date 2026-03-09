@@ -499,21 +499,40 @@ function renderChart(rows){
     const cd=cv._cd; if(!cd)return;
     const r=cv.getBoundingClientRect();
     const mx=e.clientX-r.left;
+    const my=e.clientY-r.top;
     if(mx<cd.ml||mx>cd.ml+cd.pw){tt.style.display='none';return;}
     const frac=(mx-cd.ml)/cd.pw;
     const xTime=cd.minX+frac*(cd.maxX-cd.minX);
     const xDate=new Date(xTime);
-    let html=`<strong style="font-family:Arial;font-size:13px;color:#f0f4ff">${fd(xDate)}</strong>`;
-    const shown=cd.series.slice(0,8);
-    for(const s of shown){
-      let best=null,bestD=Infinity;
-      for(const p of s.pts){const d=Math.abs((p.x instanceof Date?p.x.getTime():+p.x)-xTime);if(d<bestD){bestD=d;best=p;}}
-      if(best&&bestD<180*24*36e5){
-        const sign=best.y>=0?'+':'';
-        html+=`<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color};margin-right:4px;vertical-align:middle"></span>${s.label}: <span style="color:${best.y>=0?'#40c070':'#e05050'}">${sign}${best.y.toFixed(3)}</span>`;
+    // Find nearest point per series and rank by vertical pixel distance to mouse
+    const candidates=[];
+    for(const s of cd.series){
+      let best=null,bestDt=Infinity;
+      for(const p of s.pts){
+        const dt=Math.abs((p.x instanceof Date?p.x.getTime():+p.x)-xTime);
+        if(dt<bestDt){bestDt=dt;best=p;}
+      }
+      if(best&&bestDt<180*24*36e5){
+        const pixDist=Math.abs(cd.ym(best.y)-my);
+        candidates.push({s,best,pixDist});
       }
     }
-    if(cd.series.length>8) html+=`<br><span style="color:#7a8299">…+${cd.series.length-8} more</span>`;
+    // Sort by closeness to cursor — line being hovered is always first/shown
+    candidates.sort((a,b)=>a.pixDist-b.pixDist);
+    const MAX=8;
+    const shown=candidates.slice(0,MAX);
+    const hiddenCount=candidates.length-shown.length;
+    let html=`<strong style="font-family:Arial;font-size:13px;color:#f0f4ff">${fd(xDate)}</strong>`;
+    for(let i=0;i<shown.length;i++){
+      const {s,best}=shown[i];
+      const isClosest=i===0;
+      const sign=best.y>=0?'+':'';
+      const valCol=best.y>=0?'#40c070':'#e05050';
+      html+=`<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color};margin-right:4px;vertical-align:middle"></span>`
+           +`<span style="${isClosest?'color:#f0f4ff;font-weight:600':''}">${s.label}:</span> `
+           +`<span style="color:${valCol}">${sign}${best.y.toFixed(3)}</span>`;
+    }
+    if(hiddenCount>0) html+=`<br><span style="color:#7a8299">…+${hiddenCount} more</span>`;
     tt.innerHTML=html; tt.style.display='block';
     tt.style.left=(e.clientX+16)+'px'; tt.style.top=(e.clientY-20)+'px';
     const tr=tt.getBoundingClientRect();
