@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoSHBODS — V/AFL Team Ratings</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700;900&family=Barlow:wght@300;400;500&display=swap');
+
+:root {
+  /* ── Slate green palette ── */
+  --bg:#0d1a16;          /* deep forest green-black */
+  --surface:#122018;     /* dark green surface */
+  --surface2:#192c20;    /* slightly lighter panel interior */
+  --border:#224030;      /* green-tinted border */
+  --accent:#7ee88a;      /* bright lime green accent */
+  --accent2:#38c4a0;     /* teal secondary accent */
+  --accent-dim:#4a9e55;  /* muted accent for hover states */
+  --text:#d4ead8;        /* warm white with faint green tint */
+  --text-dim:#6a9070;    /* muted green-grey */
+  --text-bright:#edfbf0; /* near-white */
+  --green:#7ee88a;       /* positive values — same as accent */
+  --red:#f07070;         /* negative values */
+  --fh:'Barlow Condensed','Arial Narrow',Arial,sans-serif;
+  --fb:'Barlow',Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:17px;min-height:100vh;overflow-x:hidden}
+/* Subtle hex-dot texture in forest green */
+body::before{content:'';position:fixed;inset:0;
+  background-image:radial-gradient(circle,rgba(126,232,138,.07) 1px,transparent 1px);
+  background-size:28px 28px;pointer-events:none;z-index:0}
+.wrap{position:relative;z-index:1}
+
+/* Header */
+header{display:flex;align-items:flex-end;justify-content:space-between;padding:24px 36px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(126,232,138,.07) 0%,transparent 100%);gap:16px;flex-wrap:wrap}
+.htitle h1{font-family:var(--fh);font-size:44px;font-weight:900;letter-spacing:2px;color:var(--text-bright);line-height:1;text-transform:uppercase}
+.htitle h1 span{color:var(--accent)}
+.htitle p{font-size:13px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;margin-top:5px}
+.dstatus{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text-dim)}
+.sdot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);flex-shrink:0}
+.sdot.loading{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1s infinite}
+.sdot.error{background:var(--red);box-shadow:0 0 8px var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Controls */
+.controls{padding:22px 36px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;border-bottom:1px solid var(--border);background:var(--surface)}
+label.ctrl{display:flex;flex-direction:column;gap:7px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim)}
+select,input[type=number]{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--fb);font-size:15px;padding:9px 12px;outline:none;transition:border-color .2s}
+select:focus,select:hover,input[type=number]:focus{border-color:var(--accent)}
+input[type=number]{width:88px}
+.ypair{display:flex;gap:8px}
+.btn{background:var(--accent);color:#0a1a0e;border:none;border-radius:4px;font-family:var(--fh);font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:11px 22px;cursor:pointer;transition:all .15s;white-space:nowrap;align-self:flex-end}
+.btn:hover{background:#98f0a0;transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.sec{background:transparent;color:var(--text-dim);border:1px solid var(--border);font-size:13px;padding:10px 16px}
+.btn.sec:hover{background:var(--surface2);color:var(--text);border-color:var(--accent-dim)}
+.btn.sm{padding:5px 12px;font-size:12px}
+
+/* Upload */
+.upzone{display:flex;align-items:center;gap:9px;padding:9px 14px;background:var(--surface2);border:1px dashed var(--border);border-radius:6px;cursor:pointer;transition:border-color .2s;font-size:13px;color:var(--text-dim)}
+.upzone:hover{border-color:var(--accent);color:var(--accent)}
+.upzone input{display:none}
+
+/* Pills */
+.pillbar{padding:16px 36px;border-bottom:1px solid var(--border);background:var(--surface)}
+.pillbar-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim)}
+.pillbtns{display:flex;gap:6px}
+.pills{display:flex;flex-wrap:wrap;gap:7px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 7px;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid transparent;transition:all .15s;user-select:none}
+.pill .dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.pill.on{border-color:currentColor}
+.pill.off{opacity:.28;filter:grayscale(.7)}
+.pill:hover{opacity:.85!important;filter:none!important}
+
+/* Main */
+.main{padding:26px 36px;display:flex;flex-direction:column;gap:26px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.phdr{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);gap:14px;flex-wrap:wrap}
+.ptitle{font-family:var(--fh);font-size:18px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-bright)}
+
+/* Chart */
+.chartwrap{padding:18px 22px 14px;position:relative}
+canvas#mc{width:100%!important;display:block}
+.copts{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:4px;font-family:var(--fh);font-size:13px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;padding:6px 14px;cursor:pointer;transition:all .15s}
+.tab:hover,.tab.on{background:rgba(126,232,138,.12);border-color:var(--accent);color:var(--accent)}
+.cklbl{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);white-space:nowrap}
+.cklbl input{accent-color:var(--accent);width:14px;height:14px}
+.nodata{display:none;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text-dim);gap:8px;font-size:15px;text-transform:uppercase;letter-spacing:1px}
+
+/* Table */
+.tscroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:15px}
+thead tr{background:var(--surface2);border-bottom:2px solid var(--border)}
+th{font-family:var(--fh);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);padding:12px 16px;text-align:left;white-space:nowrap;cursor:pointer;user-select:none}
+th:hover,th.sorted{color:var(--accent)}
+tbody tr{border-bottom:1px solid rgba(34,64,48,.7);transition:background .1s}
+tbody tr:hover{background:rgba(126,232,138,.05)}
+td{padding:11px 16px;white-space:nowrap}
+.tcell{display:flex;align-items:center;gap:9px;font-weight:500;color:var(--text-bright)}
+.tsw{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--text-dim)}
+.rb{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;font-family:var(--fh);font-size:14px;font-weight:700}
+.r1{background:rgba(126,232,138,.2);color:var(--accent)}
+.r2{background:rgba(200,220,200,.12);color:#aaccaa}
+.r3{background:rgba(56,196,160,.15);color:#38c4a0}
+
+/* Peaks */
+.pkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.pkcard{padding:16px 20px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.pkteam{font-family:var(--fh);font-size:16px;font-weight:700;letter-spacing:.5px;display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.pkvals{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.pkv{font-size:12px;color:var(--text-dim)}
+.pkv strong{display:block;font-size:17px;font-family:var(--fh);font-weight:600}
+
+/* Chip */
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:10px;font-size:12px;background:rgba(126,232,138,.12);color:var(--accent);border:1px solid rgba(126,232,138,.25)}
+
+/* Overlay */
+#ov{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;gap:20px;transition:opacity .4s}
+#ov.gone{opacity:0;pointer-events:none}
+.otitle{font-family:var(--fh);font-size:36px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:var(--text-bright)}
+.otitle span{color:var(--accent)}
+.obar{width:240px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.obarf{height:100%;background:var(--accent);border-radius:2px;animation:bar 1.6s ease-in-out infinite}
+@keyframes bar{0%{width:0%;margin-left:0}50%{width:70%}100%{width:0%;margin-left:100%}}
+.omsg{font-size:13px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase}
+
+footer{text-align:center;padding:18px 36px;font-size:12px;color:var(--text-dim);border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<div id="ov">
+  <div class="otitle">Mo<span>SHBODS</span></div>
+  <div class="obar"><div class="obarf"></div></div>
+  <div class="omsg">Loading data…</div>
+</div>
+
+<div class="wrap">
+<header>
+  <div class="htitle">
+    <h1>Mo<span>SHBODS</span> Ratings</h1>
+    <p>V/AFL Team Performance Ratings · 1897–Present</p>
+  </div>
+  <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <label class="upzone"><input type="file" id="fi" accept=".csv">⬆ Load updated CSV</label>
+    <div class="dstatus"><div class="sdot loading" id="dot"></div><span id="stxt">Loading…</span></div>
+  </div>
+</header>
+
+<div class="controls">
+  <label class="ctrl">Rating Type
+    <select id="rtype">
+      <option value="comb">Combined</option>
+      <option value="off">Offensive</option>
+      <option value="def">Defensive</option>
+      <option value="all">All Three</option>
+    </select>
+  </label>
+  <label class="ctrl">Year From / To
+    <div class="ypair">
+      <input type="number" id="yf" value="2010" min="1897" max="2030">
+      <input type="number" id="yt" value="2026" min="1897" max="2030">
+    </div>
+  </label>
+  <label class="ctrl">Quick Range
+    <select id="qr">
+      <option value="">Custom</option>
+      <option value="5">Last 5 Years</option>
+      <option value="10">Last 10 Years</option>
+      <option value="20">Last 20 Years</option>
+      <option value="all">All Time</option>
+      <option value="2026">2026 Season</option>
+      <option value="2025">2025 Season</option>
+      <option value="2024">2024 Season</option>
+      <option value="2023">2023 Season</option>
+      <option value="2022">2022 Season</option>
+    </select>
+  </label>
+  <button class="btn" id="ab">Apply</button>
+  <button class="btn sec" id="rb">Reset</button>
+  <button class="btn sec" id="eb">Export CSV</button>
+</div>
+
+<div class="pillbar">
+  <div class="pillbar-hdr">
+    <span>Select Teams</span>
+    <div class="pillbtns">
+      <button class="btn sec sm" id="ba">All</button>
+      <button class="btn sec sm" id="bn">None</button>
+      <button class="btn sec sm" id="bm">Modern Era</button>
+    </div>
+  </div>
+  <div class="pills" id="pills"></div>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="phdr">
+      <span class="ptitle" id="ctitle">Ratings Over Time</span>
+      <div class="copts">
+        <button class="tab on" data-ct="line">Line</button>
+        <button class="tab" data-ct="area">Area</button>
+        <div style="width:1px;height:20px;background:var(--border)"></div>
+        <label class="cklbl"><input type="checkbox" id="ckz"> Zero line</label>
+        <label class="cklbl"><input type="checkbox" id="cks" checked> Smooth</label>
+      </div>
+    </div>
+    <div class="chartwrap">
+      <canvas id="mc" height="400"></canvas>
+      <div class="nodata" id="nd">📉 No data for selected filters</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="phdr">
+      <span class="ptitle">Current Snapshot</span>
+      <span class="chip" id="sd"></span>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr>
+          <th data-s="rank">Rank</th>
+          <th data-s="team">Team</th>
+          <th data-s="comb">Combined</th>
+          <th data-s="off">Offensive</th>
+          <th data-s="def">Defensive</th>
+          <th data-s="delta">Δ Comb (period)</th>
+          <th data-s="peak">Peak Comb</th>
+          <th data-s="trough">Trough Comb</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="phdr"><span class="ptitle">Best Ratings in Selected Period</span></div>
+    <div class="pkgrid" id="pg"></div>
+  </div>
+</div>
+
+<footer>MoSHBODS V/AFL Ratings · No external dependencies · Place HTML + RatingData.csv in same folder, or use ⬆ Load updated CSV</footer>
+</div>
+
+<script>
+/* ── Colours ── */
+const TC={
+  'Adelaide':'#1a5fa8','Brisbane Bears':'#c8783e','Brisbane Lions':'#e0204a',
+  'Carlton':'#4a80d0','Collingwood':'#b8b8b8','Essendon':'#e04050',
+  'Fitzroy':'#c04040','Fremantle':'#7060c0','GW Sydney':'#ff8040',
+  'Geelong':'#4070b8','Gold Coast':'#ffd040','Hawthorn':'#c08040',
+  'Kangaroos':'#4070c8','Melbourne':'#e04060','Port Adelaide':'#30b0d0',
+  'Richmond':'#ffe040','St Kilda':'#f04040','Sydney':'#f05050',
+  'University':'#a080d0','West Coast':'#4080d0','Western Bulldogs':'#4488d0'
+};
+const MODERN=new Set(['Adelaide','Brisbane Bears','Brisbane Lions','Carlton','Collingwood',
+  'Essendon','Fremantle','GW Sydney','Geelong','Gold Coast','Hawthorn','Kangaroos',
+  'Melbourne','Port Adelaide','Richmond','St Kilda','Sydney','West Coast','Western Bulldogs']);
+
+/* ── State ── */
+let allRows=[],allTeams=[],sel=new Set();
+let sortCol='rank',sortAsc=true,chartMode='line';
+let maxY=2026,minY=1897;
+
+/* ── CSV parser (no libraries) ── */
+function parseCSV(txt){
+  const lines=txt.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  const hdr=lines[0].split(',').map(h=>h.trim().replace(/"/g,''));
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const l=lines[i].trim(); if(!l) continue;
+    const v=l.split(',');
+    if(v.length<hdr.length) continue;
+    const o={};
+    hdr.forEach((h,j)=>o[h]=(v[j]||'').trim().replace(/"/g,''));
+    rows.push(o);
+  }
+  return rows;
+}
+
+/* ── Date helpers ── */
+function pd(s){
+  if(!s)return null;
+  const p=s.split('/');
+  if(p.length!==3)return null;
+  const d=new Date(+p[2],+p[1]-1,+p[0]);
+  return isNaN(d)?null:d;
+}
+function fd(d){return d?d.toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'}):''}
+
+/* ── Load ── */
+function loadData(txt){
+  const raw=parseCSV(txt);
+  const rows=[];
+  for(const r of raw){
+    if(!r.Team||!r.Date)continue;
+    const d=pd(r.Date);
+    if(!d)continue;
+    rows.push({
+      team:r.Team,year:+r.Year||d.getFullYear(),
+      date:d,dateStr:r.Date,round:r.Round_Num_Full||'',
+      post_off:parseFloat(r.Own_MoSHBODS_Rating_After_Game_Off)||0,
+      post_def:parseFloat(r.Own_MoSHBODS_Rating_After_Game_Def)||0,
+      post_comb:parseFloat(r.Own_MoSHBODS_Rating_After_Game_Comb)||0
+    });
+  }
+  rows.sort((a,b)=>a.date-b.date);
+  return rows;
+}
+
+function initApp(txt){
+  allRows=loadData(txt);
+  allTeams=[...new Set(allRows.map(r=>r.team))].sort();
+  maxY=Math.max(...allRows.map(r=>r.year));
+  minY=Math.min(...allRows.map(r=>r.year));
+  sel=new Set(allTeams.filter(t=>MODERN.has(t)));
+  document.getElementById('yf').value=Math.max(maxY-15,minY);
+  document.getElementById('yt').value=maxY;
+  document.getElementById('yf').min=minY;
+  document.getElementById('yt').max=maxY;
+  buildPills(); refresh();
+  const last=allRows[allRows.length-1];
+  setSt('',`${allRows.length.toLocaleString()} rows · Latest: ${fd(last.date)}`);
+  document.getElementById('ov').classList.add('gone');
+}
+
+function setSt(cls,txt){
+  document.getElementById('dot').className='sdot'+(cls?' '+cls:'');
+  document.getElementById('stxt').textContent=txt;
+}
+
+function getFiltered(){
+  const yf=+document.getElementById('yf').value;
+  const yt=+document.getElementById('yt').value;
+  return allRows.filter(r=>r.year>=yf&&r.year<=yt&&sel.has(r.team));
+}
+
+/* ══════════════════════════════
+   CANVAS CHART — zero dependencies
+   ══════════════════════════════ */
+function renderChart(rows){
+  const cv=document.getElementById('mc');
+  const nd=document.getElementById('nd');
+  const rt=document.getElementById('rtype').value;
+  const smooth=document.getElementById('cks').checked;
+  const showZ=document.getElementById('ckz').checked;
+  const isArea=chartMode==='area';
+
+  const KEYS=rt==='all'
+    ?[['post_comb','Combined'],['post_off','Offensive'],['post_def','Defensive']]
+    :[[`post_${rt}`,{comb:'Combined',off:'Offensive',def:'Defensive'}[rt]]];
+
+  const series=[];
+  for(const team of [...sel]){
+    const tr=rows.filter(r=>r.team===team);
+    if(!tr.length)continue;
+    const col=TC[team]||'#888';
+    for(const [key,kl] of KEYS){
+      series.push({label:team+(KEYS.length>1?` (${kl})`:''),color:col,
+        pts:tr.map(r=>({x:r.date,y:r[key]}))});
+    }
+  }
+
+  if(!series.length){
+    cv.style.display='none'; nd.style.display='flex'; return;
+  }
+  cv.style.display='block'; nd.style.display='none';
+
+  let minX=Infinity,maxX=-Infinity,minYv=Infinity,maxYv=-Infinity;
+  for(const s of series) for(const p of s.pts){
+    const t=p.x instanceof Date?p.x.getTime():+p.x;
+    if(t<minX)minX=t; if(t>maxX)maxX=t;
+    if(p.y<minYv)minYv=p.y; if(p.y>maxYv)maxYv=p.y;
+  }
+  const ypad=Math.max(.05,(maxYv-minYv)*.08);
+  minYv-=ypad; maxYv+=ypad;
+
+  const W=cv.parentElement.clientWidth-40;
+  const H=420;
+  const dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  const c=cv.getContext('2d');
+  c.scale(dpr,dpr);
+  c.clearRect(0,0,W,H);
+
+  const ml=60,mr=16,mt=14,mb=42;
+  const pw=W-ml-mr,ph=H-mt-mb;
+  const xm=x=>ml+((x instanceof Date?x.getTime():+x)-minX)/(maxX-minX)*pw;
+  const ym=y=>mt+(1-(y-minYv)/(maxYv-minYv))*ph;
+
+  /* Grid */
+  c.strokeStyle='rgba(126,232,138,.07)'; c.lineWidth=1;
+  const yS=6;
+  for(let i=0;i<=yS;i++){
+    const yv=minYv+i*(maxYv-minYv)/yS;
+    const yp=ym(yv);
+    c.beginPath();c.moveTo(ml,yp);c.lineTo(ml+pw,yp);c.stroke();
+    c.fillStyle='#5a8060'; c.font='12px Arial'; c.textAlign='right';
+    c.fillText(yv.toFixed(2),ml-8,yp+4);
+  }
+
+  /* X ticks */
+  const spanY=(maxX-minX)/(365.25*864e5);
+  const tickYrs=spanY<=3?.5:spanY<=8?1:spanY<=20?2:spanY<=50?5:10;
+  c.font='12px Arial'; c.textAlign='center';
+  const sy=new Date(minX).getFullYear(), ey=new Date(maxX).getFullYear()+1;
+  let lastLblX=-999;
+  for(let y=sy;y<=ey;y++){
+    const d=new Date(y,0,1);
+    if(d.getTime()<minX||d.getTime()>maxX)continue;
+    const xp=xm(d);
+    c.strokeStyle='rgba(126,232,138,.07)'; c.lineWidth=1;
+    c.beginPath();c.moveTo(xp,mt);c.lineTo(xp,mt+ph);c.stroke();
+    if(xp-lastLblX>=32){
+      c.fillStyle='#5a8060'; c.fillText(y,xp,mt+ph+18);
+      lastLblX=xp;
+    }
+  }
+
+  /* Zero line */
+  if(showZ&&minYv<0&&maxYv>0){
+    const yz=ym(0);
+    c.save();c.setLineDash([5,4]);
+    c.strokeStyle='rgba(126,232,138,.25)';c.lineWidth=1.5;
+    c.beginPath();c.moveTo(ml,yz);c.lineTo(ml+pw,yz);c.stroke();
+    c.restore();
+  }
+
+  /* Clip */
+  c.save();c.beginPath();c.rect(ml,mt,pw,ph);c.clip();
+
+  const alpha=series.length>10?.6:.88;
+  for(const s of series){
+    if(s.pts.length<2)continue;
+    c.save(); c.globalAlpha=alpha;
+    c.strokeStyle=s.color; c.lineWidth=series.length>12?1.4:2.0; c.lineJoin='round';
+
+    if(isArea){
+      c.beginPath();
+      c.moveTo(xm(s.pts[0].x),ym(Math.max(0,minYv)));
+      for(const p of s.pts) c.lineTo(xm(p.x),ym(p.y));
+      c.lineTo(xm(s.pts[s.pts.length-1].x),ym(Math.max(0,minYv)));
+      c.closePath(); c.fillStyle=s.color+'18'; c.fill();
+    }
+
+    // For smooth, thin to ~1 pt per 3px so bezier tension is visible; raw otherwise
+    const drawPts = (smooth && s.pts.length > pw/3)
+      ? s.pts.filter((_,i)=>i%Math.round(s.pts.length/(pw/3))===0)
+      : s.pts;
+    c.beginPath();
+    if(smooth&&drawPts.length>3){
+      c.moveTo(xm(drawPts[0].x),ym(drawPts[0].y));
+      for(let i=0;i<drawPts.length-1;i++){
+        const p0=drawPts[Math.max(i-1,0)];
+        const p1=drawPts[i];
+        const p2=drawPts[i+1];
+        const p3=drawPts[Math.min(i+2,drawPts.length-1)];
+        const t=0.3;
+        const x0=xm(p0.x),y0=ym(p0.y),x1=xm(p1.x),y1=ym(p1.y);
+        const x2=xm(p2.x),y2=ym(p2.y),x3=xm(p3.x),y3=ym(p3.y);
+        c.bezierCurveTo(x1+t*(x2-x0)/2,y1+t*(y2-y0)/2,x2-t*(x3-x1)/2,y2-t*(y3-y1)/2,x2,y2);
+      }
+    } else {
+      c.moveTo(xm(s.pts[0].x),ym(s.pts[0].y));
+      for(const p of s.pts) c.lineTo(xm(p.x),ym(p.y));
+    }
+    c.stroke(); c.restore();
+  }
+  c.restore();
+
+  /* Border */
+  c.strokeStyle='#224030'; c.lineWidth=1; c.strokeRect(ml,mt,pw,ph);
+
+  /* Legend */
+  if(series.length<=14){
+    const cols=series.length>10?2:1;
+    const perCol=Math.ceil(series.length/cols);
+    const lw=150,lh=20;
+    c.font='12px Arial';
+    for(let i=0;i<series.length;i++){
+      const col=Math.floor(i/perCol);
+      const row=i%perCol;
+      const bx=ml+pw-8-(cols-1-col)*(lw+4)-lw;
+      const by=mt+10+row*lh;
+      c.fillStyle=series[i].color; c.globalAlpha=.85;
+      c.fillRect(bx,by+3,13,9);
+      c.globalAlpha=1; c.fillStyle='#7aaa80'; c.textAlign='left';
+      const lbl=series[i].label.length>20?series[i].label.slice(0,18)+'…':series[i].label;
+      c.fillText(lbl,bx+18,by+12);
+    }
+  }
+
+  /* Store for tooltip */
+  cv._cd={series,xm,ym,ml,mr,mt,mb,pw,ph,W,H,minX,maxX,minYv,maxYv};
+
+  /* Title */
+  const yf=document.getElementById('yf').value;
+  const yt=document.getElementById('yt').value;
+  const rl=rt==='all'?'All Ratings':{comb:'Combined',off:'Offensive',def:'Defensive'}[rt];
+  document.getElementById('ctitle').textContent=`${rl} Ratings · ${yf}–${yt}`;
+}
+
+/* ── Tooltip ── */
+(function(){
+  const cv=document.getElementById('mc');
+  const tt=document.createElement('div');
+  tt.style.cssText='position:fixed;background:#0f1e15;border:1px solid #2a4e38;border-radius:6px;padding:10px 14px;font-size:14px;pointer-events:none;z-index:10;display:none;font-family:Arial,sans-serif;color:#d4ead8;max-width:260px;line-height:1.8;box-shadow:0 4px 20px rgba(0,0,0,.5)';
+  document.body.appendChild(tt);
+
+  cv.addEventListener('mousemove',e=>{
+    const cd=cv._cd; if(!cd)return;
+    const r=cv.getBoundingClientRect();
+    const mx=e.clientX-r.left;
+    const my=e.clientY-r.top;
+    if(mx<cd.ml||mx>cd.ml+cd.pw){tt.style.display='none';return;}
+    const frac=(mx-cd.ml)/cd.pw;
+    const xTime=cd.minX+frac*(cd.maxX-cd.minX);
+    const xDate=new Date(xTime);
+    // Find nearest point per series and rank by vertical pixel distance to mouse
+    const candidates=[];
+    for(const s of cd.series){
+      let best=null,bestDt=Infinity;
+      for(const p of s.pts){
+        const dt=Math.abs((p.x instanceof Date?p.x.getTime():+p.x)-xTime);
+        if(dt<bestDt){bestDt=dt;best=p;}
+      }
+      if(best&&bestDt<180*24*36e5){
+        const pixDist=Math.abs(cd.ym(best.y)-my);
+        candidates.push({s,best,pixDist});
+      }
+    }
+    // Sort by closeness to cursor — line being hovered is always first/shown
+    candidates.sort((a,b)=>a.pixDist-b.pixDist);
+    const MAX=8;
+    const shown=candidates.slice(0,MAX);
+    const hiddenCount=candidates.length-shown.length;
+    let html=`<strong style="font-family:Arial;font-size:15px;color:#edfbf0">${fd(xDate)}</strong>`;
+    for(let i=0;i<shown.length;i++){
+      const {s,best}=shown[i];
+      const isClosest=i===0;
+      const sign=best.y>=0?'+':'';
+      const valCol=best.y>=0?'#40c070':'#e05050';
+      html+=`<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color};margin-right:4px;vertical-align:middle"></span>`
+           +`<span style="${isClosest?'color:#edfbf0;font-weight:600':''}">${s.label}:</span> `
+           +`<span style="color:${valCol}">${sign}${best.y.toFixed(3)}</span>`;
+    }
+    if(hiddenCount>0) html+=`<br><span style="color:#5a8060">…+${hiddenCount} more</span>`;
+    tt.innerHTML=html; tt.style.display='block';
+    tt.style.left=(e.clientX+16)+'px'; tt.style.top=(e.clientY-20)+'px';
+    const tr=tt.getBoundingClientRect();
+    if(tr.right>window.innerWidth-8) tt.style.left=(e.clientX-tr.width-16)+'px';
+    if(tr.bottom>window.innerHeight-8) tt.style.top=(e.clientY-tr.height-8)+'px';
+  });
+  cv.addEventListener('mouseleave',()=>tt.style.display='none');
+})();
+
+/* ── Table ── */
+function renderTable(rows){
+  const snaps=[];
+  for(const team of [...sel]){
+    const tr=rows.filter(r=>r.team===team);
+    if(!tr.length)continue;
+    const last=tr[tr.length-1],first=tr[0];
+    let pk=-Infinity,pkD=null,tro=Infinity,troD=null;
+    for(const r of tr){
+      if(r.post_comb>pk){pk=r.post_comb;pkD=r.date;}
+      if(r.post_comb<tro){tro=r.post_comb;troD=r.date;}
+    }
+    snaps.push({team,rank:0,comb:last.post_comb,off:last.post_off,def:last.post_def,
+      delta:last.post_comb-first.post_comb,peak:pk,peakDate:pkD,trough:tro,troughDate:troD,
+      latestDate:last.date});
+  }
+  [...snaps].sort((a,b)=>b.comb-a.comb).forEach((s,i)=>s.rank=i+1);
+  snaps.sort((a,b)=>{
+    if(sortCol==='team') return sortAsc?a.team.localeCompare(b.team):b.team.localeCompare(a.team);
+    const va=a[sortCol],vb=b[sortCol];
+    return sortAsc?(vb-va):(va-vb);
+  });
+  const tb=document.getElementById('tb');
+  tb.innerHTML='';
+  const vc=v=>v>.005?'pos':v<-.005?'neg':'neu';
+  for(const s of snaps){
+    const col=TC[s.team]||'#888';
+    const rb=s.rank<=3?`<span class="rb r${s.rank}">${s.rank}</span>`
+      :`<span style="color:var(--text-dim);font-family:var(--fh);font-size:13px">${s.rank}</span>`;
+    tb.insertAdjacentHTML('beforeend',`<tr>
+      <td>${rb}</td>
+      <td><div class="tcell"><span class="tsw" style="background:${col}"></span>${s.team}</div></td>
+      <td class="${vc(s.comb)}">${s.comb.toFixed(3)}</td>
+      <td class="${vc(s.off)}">${s.off.toFixed(3)}</td>
+      <td class="${vc(s.def)}">${s.def.toFixed(3)}</td>
+      <td class="${vc(s.delta)}">${s.delta>0?'+':''}${s.delta.toFixed(3)}</td>
+      <td class="pos">${s.peak.toFixed(3)} <span style="color:var(--text-dim);font-size:11px">(${fd(s.peakDate)})</span></td>
+      <td class="neg">${s.trough.toFixed(3)} <span style="color:var(--text-dim);font-size:11px">(${fd(s.troughDate)})</span></td>
+    </tr>`);
+  }
+  if(snaps.length){
+    const ld=snaps.reduce((a,b)=>a.latestDate>b.latestDate?a:b).latestDate;
+    document.getElementById('sd').textContent='As of '+fd(ld);
+  }
+}
+
+/* ── Peaks ── */
+function renderPeaks(rows){
+  const pg=document.getElementById('pg');
+  pg.innerHTML='';
+  for(const team of [...sel]){
+    const tr=rows.filter(r=>r.team===team);
+    if(!tr.length)continue;
+    const col=TC[team]||'#888';
+    let pO=-Infinity,pD=-Infinity,pC=-Infinity;
+    for(const r of tr){if(r.post_off>pO)pO=r.post_off;if(r.post_def>pD)pD=r.post_def;if(r.post_comb>pC)pC=r.post_comb;}
+    pg.insertAdjacentHTML('beforeend',`<div class="pkcard">
+      <div class="pkteam"><span style="width:10px;height:10px;border-radius:50%;background:${col};display:inline-block;flex-shrink:0"></span>${team}</div>
+      <div class="pkvals">
+        <div class="pkv"><strong style="color:var(--text)">${pC.toFixed(3)}</strong>Comb</div>
+        <div class="pkv"><strong style="color:var(--green)">${pO.toFixed(3)}</strong>Off</div>
+        <div class="pkv"><strong style="color:var(--accent2)">${pD.toFixed(3)}</strong>Def</div>
+      </div>
+    </div>`);
+  }
+}
+
+function refresh(){const r=getFiltered();renderChart(r);renderTable(r);renderPeaks(r);}
+
+/* ── Pills ── */
+function buildPills(){
+  const c=document.getElementById('pills');
+  c.innerHTML='';
+  for(const team of allTeams){
+    const col=TC[team]||'#888';
+    const p=document.createElement('div');
+    p.className='pill '+(sel.has(team)?'on':'off');
+    p.dataset.team=team; p.style.color=col;
+    p.innerHTML=`<span class="dot" style="background:${col}"></span>${team}`;
+    p.addEventListener('click',()=>{
+      sel.has(team)?sel.delete(team):sel.add(team);
+      p.className='pill '+(sel.has(team)?'on':'off');
+    });
+    c.appendChild(p);
+  }
+}
+function syncPills(){document.querySelectorAll('.pill').forEach(p=>{p.className='pill '+(sel.has(p.dataset.team)?'on':'off');});}
+
+/* ── Sort ── */
+document.querySelectorAll('th[data-s]').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const col=th.dataset.s;
+    if(sortCol===col)sortAsc=!sortAsc; else{sortCol=col;sortAsc=true;}
+    document.querySelectorAll('th[data-s]').forEach(h=>h.classList.remove('sorted'));
+    th.classList.add('sorted');
+    renderTable(getFiltered());
+  });
+});
+
+/* ── Chart tabs ── */
+document.querySelectorAll('.tab[data-ct]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab[data-ct]').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on'); chartMode=btn.dataset.ct; renderChart(getFiltered());
+  });
+});
+
+document.getElementById('cks').addEventListener('change',()=>renderChart(getFiltered()));
+document.getElementById('ckz').addEventListener('change',()=>renderChart(getFiltered()));
+
+/* ── Quick range ── */
+document.getElementById('qr').addEventListener('change',e=>{
+  const v=e.target.value; if(!v)return;
+  if(v==='all'){document.getElementById('yf').value=minY;document.getElementById('yt').value=maxY;}
+  else if(/^\d{4}$/.test(v)&&+v>100){document.getElementById('yf').value=+v;document.getElementById('yt').value=+v;}
+  else{document.getElementById('yf').value=maxY-+v+1;document.getElementById('yt').value=maxY;}
+});
+
+/* ── Buttons ── */
+document.getElementById('ab').addEventListener('click',refresh);
+document.getElementById('rb').addEventListener('click',()=>{
+  document.getElementById('yf').value=Math.max(maxY-15,minY);
+  document.getElementById('yt').value=maxY;
+  document.getElementById('rtype').value='comb';
+  document.getElementById('qr').value='';
+  sel=new Set(allTeams.filter(t=>MODERN.has(t)));
+  syncPills();refresh();
+});
+document.getElementById('ba').addEventListener('click',()=>{allTeams.forEach(t=>sel.add(t));syncPills();});
+document.getElementById('bn').addEventListener('click',()=>{sel.clear();syncPills();});
+document.getElementById('bm').addEventListener('click',()=>{sel=new Set(allTeams.filter(t=>MODERN.has(t)));syncPills();});
+document.getElementById('eb').addEventListener('click',()=>{
+  const rows=getFiltered();
+  let out='Team,Date,Round,Post_Off,Post_Def,Post_Comb\n';
+  for(const r of rows) out+=`${r.team},${r.dateStr},${r.round},${r.post_off.toFixed(6)},${r.post_def.toFixed(6)},${r.post_comb.toFixed(6)}\n`;
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([out],{type:'text/csv'})),download:'moshbods_export.csv'});
+  a.click();
+});
+
+/* ── File input ── */
+function readFile(file){
+  setSt('loading','Loading…');
+  const fr=new FileReader();
+  fr.onload=e=>initApp(e.target.result);
+  fr.onerror=()=>setSt('error','Failed to read file');
+  fr.readAsText(file);
+}
+document.getElementById('fi').addEventListener('change',e=>{if(e.target.files[0])readFile(e.target.files[0]);});
+
+/* ── Resize ── */
+let rsT;
+window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{if(allRows.length)renderChart(getFiltered());},150);});
+
+/* ── Boot ── */
+(async function boot(){
+  try{
+    const r=await fetch('RatingData.csv');
+    if(!r.ok)throw 0;
+    initApp(await r.text());
+  }catch{
+    document.getElementById('ov').classList.add('gone');
+    setSt('error','No data — upload CSV above');
+    document.querySelector('.main').insertAdjacentHTML('afterbegin',`
+      <div id="bn2" style="background:var(--surface);border:1px dashed var(--border);border-radius:8px;padding:40px;text-align:center">
+        <div style="font-size:36px;margin-bottom:12px;opacity:.4">📂</div>
+        <div style="font-family:var(--fh);font-size:20px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Load Your Data</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">
+          Use the <strong>⬆ Load updated CSV</strong> button in the top-right,<br>
+          or choose your file below.
+        </div>
+        <label class="btn" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="file" accept=".csv" id="bfi" style="display:none">
+          Choose RatingData.csv
+        </label>
+      </div>`);
+    document.getElementById('bfi').addEventListener('change',e=>{
+      if(e.target.files[0]){document.getElementById('bn2').remove();readFile(e.target.files[0]);}
+    });
+  }
+})();
+</script>
+</body>
+</html>
