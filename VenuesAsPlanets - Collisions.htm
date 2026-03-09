@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<style>html,body{width:100%;height:100%;min-height:100vh;margin:0;padding:0;overflow:hidden;}</style>
+<title>AFL / VFL Venues — Solar System</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #02060f;
+    --panel: rgba(5,15,35,0.95);
+    --border: rgba(30,80,160,0.35);
+    --accent: #2d7fff;
+    --accent2: #00e5ff;
+    --text: #b8cfe8;
+    --dim: #3a5880;
+    --sb-bg: #0a1628;
+    --sb-thumb: #1e4080;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:'Share Tech Mono',monospace;font-size:12px;
+    height:100vh;display:flex;flex-direction:column;overflow:hidden;
+  }
+  header{
+    flex:0 0 auto;padding:9px 18px 7px;
+    border-bottom:1px solid var(--border);
+    background:rgba(2,8,22,0.97);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  }
+  header h1{
+    font-family:'Orbitron',monospace;font-size:16px;font-weight:900;
+    color:var(--accent2);letter-spacing:3px;
+    text-shadow:0 0 18px rgba(0,229,255,0.45);white-space:nowrap;
+  }
+  header small{color:var(--dim);font-size:10px;letter-spacing:1px;}
+  .layout{flex:1 1 auto;display:flex;overflow:hidden;}
+
+  /* Sidebar */
+  .sidebar{
+    flex:0 0 220px;background:var(--panel);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .sidebar-top{flex:0 0 auto;padding:10px 12px 8px;border-bottom:1px solid var(--border);}
+  .sidebar-top h3{
+    font-family:'Orbitron',monospace;font-size:9px;
+    color:var(--accent);letter-spacing:2px;margin-bottom:9px;
+  }
+  .ctrl-row{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+  .ctrl-row label{flex:0 0 72px;color:var(--dim);font-size:10px;}
+  .ctrl-row input[type=range]{flex:1;accent-color:var(--accent);height:3px;cursor:pointer;}
+  .ctrl-row span{flex:0 0 26px;text-align:right;color:var(--accent2);font-size:10px;}
+  .grav-row{
+    display:flex;align-items:center;gap:7px;margin:7px 0 5px;
+    padding:5px 7px;border:1px solid var(--border);border-radius:3px;
+    background:rgba(0,229,255,0.04);
+  }
+  .grav-row label{flex:1;font-size:10px;color:var(--accent2);}
+  .toggle{position:relative;width:32px;height:16px;flex-shrink:0;cursor:pointer;}
+  .toggle input{opacity:0;width:0;height:0;position:absolute;}
+  .toggle-track{position:absolute;inset:0;border-radius:8px;background:var(--sb-thumb);transition:background .2s;}
+  .toggle input:checked~.toggle-track{background:var(--accent2);}
+  .toggle-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .2s;}
+  .toggle input:checked~.toggle-thumb{left:18px;}
+  .btn-row{display:flex;gap:5px;margin-top:7px;}
+  button{
+    font-family:'Share Tech Mono',monospace;font-size:10px;
+    padding:4px 6px;border:1px solid var(--border);
+    background:rgba(20,50,100,0.55);color:var(--text);
+    cursor:pointer;border-radius:2px;letter-spacing:1px;
+    transition:background .15s,color .15s;flex:1;
+  }
+  button:hover{background:var(--accent);color:#fff;border-color:var(--accent);}
+  button.lit{background:var(--accent2);color:#000;border-color:var(--accent2);}
+
+  /* Search */
+  .vl-search{flex:0 0 auto;padding:6px 10px;border-bottom:1px solid var(--border);}
+  .vl-search input{
+    width:100%;background:rgba(10,22,40,0.8);border:1px solid var(--border);
+    color:var(--text);font-family:'Share Tech Mono',monospace;font-size:11px;
+    padding:4px 8px;border-radius:2px;outline:none;
+  }
+  .vl-search input::placeholder{color:var(--dim);}
+  .vl-search input:focus{border-color:var(--accent);}
+
+  /* Venue list */
+  .venue-list{
+    flex:1 1 auto;overflow-y:auto;
+    scrollbar-width:thin;scrollbar-color:var(--sb-thumb) var(--sb-bg);
+  }
+  .venue-list::-webkit-scrollbar{width:4px;}
+  .venue-list::-webkit-scrollbar-track{background:var(--sb-bg);}
+  .venue-list::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:2px;}
+
+  .state-header{
+    display:flex;align-items:center;gap:6px;
+    padding:5px 10px 3px;cursor:pointer;user-select:none;
+    border-bottom:1px solid var(--border);
+    background:rgba(10,25,55,0.75);
+    position:sticky;top:0;z-index:1;
+  }
+  .state-header:hover{background:rgba(20,50,100,0.6);}
+  .state-header .flag{font-size:12px;flex-shrink:0;}
+  .state-header .st-name{
+    flex:1;font-family:'Orbitron',monospace;font-size:8px;
+    color:var(--accent);letter-spacing:1.5px;
+  }
+  .state-header .st-count{font-size:9px;color:var(--dim);}
+  .state-header .chev{font-size:9px;color:var(--dim);transition:transform .2s;}
+  .state-group.collapsed .chev{transform:rotate(-90deg);}
+  .state-group.collapsed .state-venues{display:none;}
+
+  .venue-item{
+    display:flex;align-items:center;gap:7px;
+    padding:4px 10px 4px 18px;
+    border-bottom:1px solid rgba(30,80,160,0.08);
+    cursor:pointer;transition:background .1s;
+  }
+  .venue-item:hover{background:rgba(45,127,255,0.1);}
+  .venue-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .venue-name{flex:1;font-size:10px;color:var(--text);line-height:1.35;}
+  .venue-cap{font-size:9px;color:var(--dim);white-space:nowrap;}
+  .venue-chk{flex:0 0 12px;font-size:11px;color:var(--accent2);}
+  .venue-item.off .venue-name{color:#1e3050;}
+  .venue-item.off .venue-cap{color:#1a2d40;}
+  .venue-item.off .venue-chk{color:transparent;}
+  .venue-item.hidden-f{display:none;}
+
+  /* Canvas */
+  .canvas-wrap{
+    flex:1 1 auto;display:flex;align-items:center;
+    justify-content:center;overflow:hidden;position:relative;
+  }
+  canvas{display:block;}
+  .hud{
+    position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+    font-size:10px;color:var(--dim);letter-spacing:1px;
+    pointer-events:none;text-align:center;white-space:nowrap;
+  }
+
+  /* Tooltip */
+  #tip{
+    position:fixed;pointer-events:none;
+    background:rgba(4,12,32,0.97);border:1px solid var(--accent);
+    padding:8px 12px;border-radius:3px;font-size:11px;line-height:2;
+    color:var(--text);min-width:175px;display:none;z-index:200;
+    box-shadow:0 0 22px rgba(45,127,255,0.3);
+  }
+  #tip b{color:var(--accent2);font-family:'Orbitron',monospace;font-size:9px;display:block;margin-bottom:2px;}
+  #tip .tg{color:#69db7c;font-size:10px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⬡ AFL / VFL SOLAR SYSTEM</h1>
+  <small>MCG = SUN &nbsp;·&nbsp; CAPACITY = MASS &nbsp;·&nbsp; HAVERSINE DISTANCE = ORBITAL RADIUS &nbsp;·&nbsp; N-BODY GRAVITY</small>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <h3>◈ SIMULATION</h3>
+      <div class="ctrl-row">
+        <label>Speed</label>
+        <input type="range" id="spdS" min="0.1" max="6" step="0.1" value="1.5">
+        <span id="spdV">1.5</span>
+      </div>
+      <div class="ctrl-row">
+        <label>Size</label>
+        <input type="range" id="szS" min="0.4" max="2.5" step="0.1" value="1">
+        <span id="szV">1.0</span>
+      </div>
+      <div class="ctrl-row">
+        <label>Trail</label>
+        <input type="range" id="trS" min="0" max="80" step="1" value="25">
+        <span id="trV">25</span>
+      </div>
+      <div class="ctrl-row">
+        <label>Gravity</label>
+        <input type="range" id="gS" min="0.1" max="10" step="0.1" value="1.5">
+        <span id="gV">1.5</span>
+      </div>
+      <div class="grav-row">
+        <label>N-Body Gravity</label>
+        <label class="toggle">
+          <input type="checkbox" id="gravToggle" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+      <div class="grav-row">
+        <label>Reset on Escape</label>
+        <label class="toggle">
+          <input type="checkbox" id="escapeToggle">
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+      <div class="grav-row">
+        <label>Collisions</label>
+        <label class="toggle">
+          <input type="checkbox" id="collisionToggle" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button id="btnAll">ALL</button>
+        <button id="btnNone">NONE</button>
+        <button id="btnReset">RESET</button>
+        <button id="btnPause">START</button>
+      </div>
+    </div>
+    <div class="vl-search">
+      <input type="text" id="venueSearch" placeholder="🔍  filter venues…">
+    </div>
+    <div class="venue-list" id="venueList"></div>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div class="hud" id="hud"></div>
+  </div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const VENUES = [
+  // VIC
+  {name:"Melbourne Cricket Gnd", state:"VIC",lat:-37.82,   lon:144.983,  cap:100024},
+  {name:"Docklands Stadium",     state:"VIC",lat:-37.8164, lon:144.9475, cap:56347},
+  {name:"Waverley Park",         state:"VIC",lat:-37.9231, lon:145.1898, cap:92935},
+  {name:"Princes Park",          state:"VIC",lat:-37.7849, lon:144.9576, cap:62986},
+  {name:"Moorabbin Oval",        state:"VIC",lat:-37.9366, lon:145.0405, cap:51370},
+  {name:"Junction Oval",         state:"VIC",lat:-37.8497, lon:144.9819, cap:47000},
+  {name:"Victoria Park",         state:"VIC",lat:-37.8036, lon:145.0026, cap:47000},
+  {name:"Punt Road Oval",        state:"VIC",lat:-37.8249, lon:144.9837, cap:46000},
+  {name:"Windy Hill",            state:"VIC",lat:-37.7513, lon:144.9123, cap:43487},
+  {name:"Western Oval",          state:"VIC",lat:-37.7973, lon:144.8801, cap:42354},
+  {name:"Lake Oval",             state:"VIC",lat:-37.8438, lon:144.9635, cap:41000},
+  {name:"Kardinia Park",         state:"VIC",lat:-38.158,  lon:144.354,  cap:40000},
+  {name:"Glenferrie Oval",       state:"VIC",lat:-37.8263, lon:145.0342, cap:36000},
+  {name:"Coburg City Oval",      state:"VIC",lat:-37.7486, lon:144.9656, cap:36000},
+  {name:"Arden Street Oval",     state:"VIC",lat:-37.7986, lon:144.9416, cap:35000},
+  {name:"Olympic Park Oval",     state:"VIC",lat:-37.825,  lon:144.98,   cap:30000},
+  {name:"East Melbourne CG",     state:"VIC",lat:-37.8135, lon:144.9855, cap:18000},
+  {name:"Toorak Park",           state:"VIC",lat:-37.8569, lon:145.0215, cap:15000},
+  {name:"Eureka Stadium",        state:"VIC",lat:-37.5403, lon:143.8175, cap:11000},
+  {name:"Brunswick Street Oval", state:"VIC",lat:-37.7838, lon:144.9792, cap:10000},
+  {name:"Yarraville Oval",       state:"VIC",lat:-37.8146, lon:144.8898, cap:10000},
+  {name:"Corio Oval",            state:"VIC",lat:-38.1355, lon:144.3588, cap:25000},
+  {name:"Euroa Oval",            state:"VIC",lat:-36.7529, lon:145.5694, cap:7500},
+  {name:"Yallourn Oval",         state:"VIC",lat:-38.1775, lon:146.3645, cap:3500},
+  // SA
+  {name:"Adelaide Oval",         state:"SA", lat:-34.915,  lon:138.5963, cap:53583},
+  {name:"Football Park",         state:"SA", lat:-34.8728, lon:138.5137, cap:51240},
+  {name:"Norwood Oval",          state:"SA", lat:-34.9205, lon:138.6292, cap:10000},
+  {name:"Barossa Park",          state:"SA", lat:-34.6028, lon:138.8942, cap:10000},
+  {name:"Summit Sport & Rec Pk", state:"SA", lat:-35.0607, lon:138.8589, cap:7329},
+  // QLD
+  {name:"The Gabba",             state:"QLD",lat:-27.4858, lon:153.0381, cap:42000},
+  {name:"Carrara Stadium",       state:"QLD",lat:-28.0061, lon:153.3676, cap:25000},
+  {name:"Brisbane Exhibition Gnd",state:"QLD",lat:-27.4492,lon:153.0351,cap:25490},
+  {name:"Cazalys Stadium",       state:"QLD",lat:-16.9303, lon:145.7447, cap:13500},
+  {name:"Riverway Stadium",      state:"QLD",lat:-19.3008, lon:146.7448, cap:10000},
+  // NSW
+  {name:"Stadium Australia",     state:"NSW",lat:-33.8474, lon:151.063,  cap:82500},
+  {name:"Sydney Cricket Ground", state:"NSW",lat:-33.8916, lon:151.2249, cap:48000},
+  {name:"Sydney Showground Stad",state:"NSW",lat:-33.8473, lon:151.0672, cap:23500},
+  {name:"Blacktown Sportspark",  state:"NSW",lat:-33.7702, lon:150.8449, cap:10000},
+  {name:"Albury Oval",           state:"NSW",lat:-36.0737, lon:146.915,  cap:8000},
+  // WA
+  {name:"Perth Stadium",         state:"WA", lat:-31.949,  lon:115.889,  cap:61266},
+  {name:"Subiaco Oval",          state:"WA", lat:-31.9454, lon:115.8284, cap:42922},
+  {name:"WACA Ground",           state:"WA", lat:-31.9603, lon:115.8799, cap:35000},
+  {name:"Hands Oval",            state:"WA", lat:-33.3443, lon:115.6413, cap:8000},
+  // TAS
+  {name:"Bellerive Oval",        state:"TAS",lat:-42.8777, lon:147.3717, cap:19500},
+  {name:"North Hobart Oval",     state:"TAS",lat:-42.8718, lon:147.3198, cap:18000},
+  {name:"York Park",             state:"TAS",lat:-41.4253, lon:147.1344, cap:15615},
+  // ACT
+  {name:"Bruce Stadium",         state:"ACT",lat:-35.2499, lon:149.1011, cap:25000},
+  {name:"Manuka Oval",           state:"ACT",lat:-35.3207, lon:149.1415, cap:15000},
+  // NT
+  {name:"Marrara Oval",          state:"NT", lat:-12.4016, lon:130.877,  cap:12000},
+  {name:"Traeger Park",          state:"NT", lat:-23.7127, lon:133.8608, cap:10000},
+  // Int'l
+  {name:"Wellington Regional",   state:"NZ", lat:-41.2725, lon:174.7853, cap:36000},
+  {name:"Jiangwan Stadium",      state:"CN", lat:31.3095,  lon:121.5095, cap:11000},
+];
+
+const STATE_META = {
+  VIC:{flag:"🟦",label:"VICTORIA"},
+  SA: {flag:"🔴",label:"SOUTH AUSTRALIA"},
+  QLD:{flag:"🟤",label:"QUEENSLAND"},
+  NSW:{flag:"🟢",label:"NEW SOUTH WALES"},
+  WA: {flag:"⚫",label:"WESTERN AUSTRALIA"},
+  TAS:{flag:"🟣",label:"TASMANIA"},
+  ACT:{flag:"⚪",label:"ACT"},
+  NT: {flag:"🟠",label:"NORTHERN TERRITORY"},
+  NZ: {flag:"🌿",label:"NEW ZEALAND"},
+  CN: {flag:"🔶",label:"CHINA"},
+};
+
+const STATE_ORDER = ["VIC","SA","QLD","NSW","WA","TAS","ACT","NT","NZ","CN"];
+
+function hav(la1,lo1,la2,lo2){
+  const R=6371,r=Math.PI/180,
+        dL=(la2-la1)*r,dO=(lo2-lo1)*r;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dO/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+const SUN_IDX = VENUES.findIndex(v=>v.name==="Melbourne Cricket Gnd");
+const SUN_V   = VENUES[SUN_IDX];
+
+const COLS = [
+  "#ff6b6b","#ffa94d","#ffd43b","#69db7c","#38d9a9",
+  "#4dabf7","#748ffc","#da77f2","#f783ac","#a9e34b",
+  "#63e6be","#74c0fc","#e599f7","#ffa8a8","#ffec99",
+  "#96f2d7","#d0bfff","#c5f6fa","#fff3bf","#d3f9d8",
+  "#e8dbff","#ffe8cc","#d0ebff","#ffdeeb","#e3fafc",
+];
+
+function sr(i){let x=Math.sin(i*9301+49297)*233280;return x-Math.floor(x);}
+
+// Normalise capacity → mass in range 1–10 so physics stays stable
+const MAX_CAP = Math.max(...VENUES.map(v=>v.cap));
+const planets = VENUES.map((v,i)=>({
+  ...v,
+  idx:i,
+  distKm:hav(v.lat,v.lon,SUN_V.lat,SUN_V.lon),
+  isSun:i===SUN_IDX,
+  colour:i===SUN_IDX?"#ffd200":COLS[i%COLS.length],
+  included:true,
+  angle:sr(i+100)*2*Math.PI,
+  x:0,y:0,vx:0,vy:0,ax:0,ay:0,
+  trail:[],
+  mass: 1 + (v.cap/MAX_CAP)*9,   // 1–10; sun gets SUN_FACTOR multiplier in physics
+}));
+
+// ── Physics constants (must be before initPositions) ─────────────────────────
+const G_BASE     = 0.0000144;  // tuned so v=sqrt(G*M/r) gives stable orbits at canvas scale
+const SUN_FACTOR = 200;        // sun mass multiplier to dominate system
+const SOFT       = 12;         // softening length (px) to prevent singularities
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const S={speed:1.5,size:1.0,trail:25,gravity:1.5,gravOn:true,paused:true,resetEscape:false,collisions:true};
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+const wrap=document.getElementById('canvasWrap');
+
+function resize(){
+  const r=wrap.getBoundingClientRect();
+  canvas.width=r.width;canvas.height=r.height;
+}
+resize();
+
+function getMaxR(){return Math.min(canvas.width/2,canvas.height/2)*0.92;}
+function getMaxDist(){return Math.max(...planets.filter(p=>!p.isSun).map(p=>p.distKm),1);}
+
+function initPositions(){
+  const cx=canvas.width/2, cy=canvas.height/2;
+  if(!cx||!cy) return;
+  const maxR=getMaxR(), maxD=getMaxDist();
+  const sun=planets[SUN_IDX];
+  const M_sun = sun.mass * SUN_FACTOR;
+  planets.forEach(p=>{
+    if(p.isSun){ p.x=cx; p.y=cy; p.vx=0; p.vy=0; return; }
+    const nd = p.distKm/maxD;
+    const r  = Math.pow(nd, 0.52)*maxR;
+    p.x = cx + r*Math.cos(p.angle);
+    p.y = cy + r*Math.sin(p.angle);
+    const G = G_BASE * S.gravity;
+    const v = Math.sqrt(G * M_sun / Math.max(r, 1));
+    p.vx = -Math.sin(p.angle)*v;
+    p.vy =  Math.cos(p.angle)*v;
+  });
+}
+
+// Defer until browser has laid out and sized the canvas
+requestAnimationFrame(()=>requestAnimationFrame(()=>{ resize(); initPositions(); }));
+window.addEventListener('resize',()=>{resize();initPositions();planets.forEach(p=>p.trail=[]);});
+
+function reinitPlanet(p){
+  const cx=canvas.width/2, cy=canvas.height/2;
+  const maxR=getMaxR(), maxD=getMaxDist();
+  const nd = p.distKm/maxD;
+  const r  = Math.pow(nd,0.52)*maxR;
+  p.x = cx + r*Math.cos(p.angle);
+  p.y = cy + r*Math.sin(p.angle);
+  const G = G_BASE * S.gravity;
+  const v = Math.sqrt(G * planets[SUN_IDX].mass * SUN_FACTOR / Math.max(r,1));
+  p.vx = -Math.sin(p.angle)*v;
+  p.vy =  Math.cos(p.angle)*v;
+}
+
+// ── N-body physics ────────────────────────────────────────────────────────────
+// Flash state for collision visual
+const collisionFlashes = []; // [{x,y,r,age,maxAge,colour}]
+
+function physicsStep(dt){
+  if(S.paused) return;
+  const G  = G_BASE * S.gravity;
+  const sc = S.speed * dt * 60;
+  const active = planets.filter(p=>p.included);
+  active.forEach(p=>{ p.ax=0; p.ay=0; });
+
+  for(let i=0;i<active.length;i++){
+    const pi=active[i];
+    const mi = pi.isSun ? pi.mass*SUN_FACTOR : pi.mass;
+    for(let j=i+1;j<active.length;j++){
+      const pj=active[j];
+      const mj = pj.isSun ? pj.mass*SUN_FACTOR : pj.mass;
+      const dx=pj.x-pi.x, dy=pj.y-pi.y;
+      const dist2=dx*dx+dy*dy+SOFT*SOFT;
+      const dist =Math.sqrt(dist2);
+      const f = G*mi*mj/dist2;
+      const ux=dx/dist, uy=dy/dist;
+      pi.ax += f*ux/mi;  pi.ay += f*uy/mi;
+      pj.ax -= f*ux/mj;  pj.ay -= f*uy/mj;
+    }
+  }
+
+  // Integrate
+  const boundary = Math.max(canvas.width, canvas.height) * 1.5;
+  active.forEach(p=>{
+    if(p.isSun) return;
+    p.vx += p.ax * sc;
+    p.vy += p.ay * sc;
+    const spd = Math.hypot(p.vx, p.vy);
+    const maxSpd = 8 * S.speed;
+    if(spd > maxSpd){ p.vx *= maxSpd/spd; p.vy *= maxSpd/spd; }
+    p.x += p.vx * sc;
+    p.y += p.vy * sc;
+    const escaped = !isFinite(p.x)||!isFinite(p.y)||Math.abs(p.x)>boundary||Math.abs(p.y)>boundary;
+    if(escaped){
+      if(S.resetEscape){ reinitPlanet(p); p.trail=[]; }
+      // if resetEscape is off, just leave it gone (isFinite guard in drawPlanet handles it)
+    } else if(S.trail>0){
+      p.trail.push([p.x,p.y]);
+      if(p.trail.length>S.trail) p.trail.shift();
+    }
+  });
+
+  // ── Collision detection ───────────────────────────────────────────────────
+  if(S.collisions && canvas.width>0){
+    const alive = planets.filter(p=>p.included && isFinite(p.x) && isFinite(p.y));
+    for(let i=0;i<alive.length;i++){
+      const pi=alive[i];
+      const ri=pR(pi);
+      for(let j=i+1;j<alive.length;j++){
+        const pj=alive[j];
+        if(!pi.included||!pj.included) continue; // may have been obliterated this frame
+        if(pi.isSun||pj.isSun) continue;         // sun is indestructible
+        const rj=pR(pj);
+        const dx=pj.x-pi.x, dy=pj.y-pi.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist > ri+rj) continue;               // no collision
+
+        // Determine survivor and victim by mass; equal mass → random
+        let survivor, victim;
+        if(Math.abs(pi.mass-pj.mass)<0.001){
+          [survivor,victim] = Math.random()<0.5 ? [pi,pj] : [pj,pi];
+        } else {
+          [survivor,victim] = pi.mass>=pj.mass ? [pi,pj] : [pj,pi];
+        }
+
+        // Spawn explosion flash at collision point
+        const fx=(pi.x+pj.x)/2, fy=(pi.y+pj.y)/2;
+        collisionFlashes.push({x:fx,y:fy,r:Math.max(ri,rj)*2.5,age:0,maxAge:35,colour:victim.colour});
+
+        // Perturb survivor velocity by a random kick
+        const kickMag = Math.hypot(survivor.vx,survivor.vy) * (0.15 + Math.random()*0.35);
+        const kickAngle = Math.random()*2*Math.PI;
+        survivor.vx += Math.cos(kickAngle)*kickMag;
+        survivor.vy += Math.sin(kickAngle)*kickMag;
+        survivor.trail=[];
+
+        // Remove victim from simulation
+        victim.included=false;
+        victim.trail=[];
+        // Update sidebar checkbox to reflect removal
+        const el=document.getElementById(`vi_${victim.idx}`);
+        if(el){ el.className='venue-item off'; }
+        const st=victim.state;
+        const ps=byState[st];
+        if(ps){
+          const sc2=document.getElementById(`sc_${st}`);
+          if(sc2) sc2.textContent=`${ps.filter(q=>q.included).length}/${ps.length}`;
+        }
+      }
+    }
+  }
+
+  // Age & cull flashes
+  for(let i=collisionFlashes.length-1;i>=0;i--){
+    collisionFlashes[i].age++;
+    if(collisionFlashes[i].age>collisionFlashes[i].maxAge) collisionFlashes.splice(i,1);
+  }
+}
+
+// ── Venue list (grouped by state) ─────────────────────────────────────────────
+const venueListEl=document.getElementById('venueList');
+const searchEl=document.getElementById('venueSearch');
+const itemEls={};
+const byState={};
+STATE_ORDER.forEach(s=>byState[s]=[]);
+planets.forEach(p=>{if(!p.isSun&&byState[p.state])byState[p.state].push(p);});
+
+function buildVenueList(){
+  venueListEl.innerHTML='';
+  STATE_ORDER.forEach(st=>{
+    const ps=byState[st];if(!ps||!ps.length)return;
+    const meta=STATE_META[st]||{flag:'🌐',label:st};
+    const grp=document.createElement('div');
+    grp.className='state-group';
+    grp.dataset.state=st;
+
+    const hdr=document.createElement('div');
+    hdr.className='state-header';
+    hdr.innerHTML=`
+      <span class="flag">${meta.flag}</span>
+      <span class="st-name">${meta.label}</span>
+      <span class="st-count" id="sc_${st}">${ps.filter(p=>p.included).length}/${ps.length}</span>
+      <span class="chev">▼</span>`;
+    hdr.addEventListener('click',()=>grp.classList.toggle('collapsed'));
+    grp.appendChild(hdr);
+
+    const vv=document.createElement('div');
+    vv.className='state-venues';
+    ps.forEach(p=>{
+      const el=document.createElement('div');
+      el.className='venue-item'+(p.included?'':' off');
+      el.id=`vi_${p.idx}`;
+      el.innerHTML=`
+        <div class="venue-dot" style="background:${p.colour};box-shadow:0 0 5px ${p.colour}99;"></div>
+        <div class="venue-name">${p.name}</div>
+        <div class="venue-cap">${(p.cap/1000).toFixed(0)}k</div>
+        <div class="venue-chk">✓</div>`;
+      el.addEventListener('click',()=>{
+        p.included=!p.included;
+        if(!p.included)p.trail=[];
+        else reinitPlanet(p);
+        el.className='venue-item'+(p.included?'':' off');
+        const sc=document.getElementById(`sc_${st}`);
+        if(sc)sc.textContent=`${ps.filter(q=>q.included).length}/${ps.length}`;
+      });
+      vv.appendChild(el);
+      itemEls[p.idx]=el;
+    });
+    grp.appendChild(vv);
+    venueListEl.appendChild(grp);
+  });
+}
+buildVenueList();
+
+searchEl.addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  planets.forEach(p=>{
+    const el=itemEls[p.idx];if(!el)return;
+    el.classList.toggle('hidden-f',!(!q||p.name.toLowerCase().includes(q)||p.state.toLowerCase().includes(q)));
+  });
+  STATE_ORDER.forEach(st=>{
+    const grp=venueListEl.querySelector(`[data-state="${st}"]`);if(!grp)return;
+    const any=(byState[st]||[]).some(p=>itemEls[p.idx]&&!itemEls[p.idx].classList.contains('hidden-f'));
+    grp.style.display=any?'':'none';
+  });
+});
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+document.getElementById('spdS').addEventListener('input',function(){S.speed=+this.value;document.getElementById('spdV').textContent=(+this.value).toFixed(1);});
+document.getElementById('szS').addEventListener('input',function(){S.size=+this.value;document.getElementById('szV').textContent=(+this.value).toFixed(1);});
+document.getElementById('trS').addEventListener('input',function(){S.trail=+this.value;document.getElementById('trV').textContent=this.value;if(+this.value===0)planets.forEach(p=>p.trail=[]);});
+document.getElementById('gS').addEventListener('input',function(){S.gravity=+this.value;document.getElementById('gV').textContent=(+this.value).toFixed(1);});
+document.getElementById('gravToggle').addEventListener('change',function(){
+  S.gravOn=this.checked;
+  if(!S.gravOn)initPositions();
+  planets.forEach(p=>p.trail=[]);
+});
+document.getElementById('escapeToggle').addEventListener('change',function(){
+  S.resetEscape=this.checked;
+});
+document.getElementById('collisionToggle').addEventListener('change',function(){
+  S.collisions=this.checked;
+});
+document.getElementById('btnAll').addEventListener('click',()=>{
+  planets.forEach(p=>{if(!p.isSun){p.included=true;reinitPlanet(p);}});
+  buildVenueList();
+});
+document.getElementById('btnNone').addEventListener('click',()=>{
+  planets.forEach(p=>{if(!p.isSun){p.included=false;p.trail=[];}});
+  buildVenueList();
+});
+document.getElementById('btnReset').addEventListener('click',()=>{
+  planets.forEach(p=>{if(!p.isSun)p.included=true;});
+  initPositions();planets.forEach(p=>p.trail=[]);
+  buildVenueList();
+});
+const pauseBtn=document.getElementById('btnPause');
+pauseBtn.addEventListener('click',()=>{
+  S.paused=!S.paused;
+  pauseBtn.textContent=S.paused?'START':'PAUSE';
+  pauseBtn.className=S.paused?'':'lit';
+});
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tip=document.getElementById('tip');
+let tipP=null;
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  const sun=planets[SUN_IDX];
+  let hit=Math.hypot(mx-sun.x,my-sun.y)<18?sun:null;
+  if(!hit)planets.forEach(p=>{
+    if(!p.included||p.isSun)return;
+    if(Math.hypot(mx-p.x,my-p.y)<pR(p)+5)hit=p;
+  });
+  tipP=hit;
+  if(hit){
+    tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px';
+    tip.style.top=(e.clientY-10)+'px';
+    const spd=Math.hypot(hit.vx||0,hit.vy||0).toFixed(3);
+    tip.innerHTML=`<b>${hit.name}</b>
+      State/Region: ${hit.state||'—'}<br>
+      Capacity: ${hit.cap.toLocaleString()}<br>
+      ${hit.isSun?'':`Dist from MCG: ${Math.round(hit.distKm).toLocaleString()} km<br>`}
+      ${hit.isSun?'☀ THE SUN':`<span class="tg">Orbital speed: ${spd} u/f</span>`}`;
+  }else{tip.style.display='none';}
+});
+canvas.addEventListener('mouseleave',()=>{tip.style.display='none';tipP=null;});
+
+// ── Draw helpers ──────────────────────────────────────────────────────────────
+function pR(p){return Math.max(Math.log10(p.cap)*2.8*S.size,2.5);}
+function h2r(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+
+function drawStars(){
+  const rng=i=>{let x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+  for(let i=0;i<300;i++){
+    const sx=rng(i)*canvas.width,sy=rng(i+1000)*canvas.height,br=rng(i+2000);
+    ctx.beginPath();ctx.arc(sx,sy,br<0.95?.5:1.1,0,2*Math.PI);
+    ctx.fillStyle=`rgba(255,255,255,${.08+br*.5})`;ctx.fill();
+  }
+}
+
+function drawOrbitGuide(p){
+  const cx=canvas.width/2,cy=canvas.height/2;
+  const maxD=getMaxDist();
+  if(!maxD||!isFinite(maxD)) return;
+  const r=Math.pow(p.distKm/maxD,0.52)*getMaxR();
+  if(!isFinite(r)||r<=0) return;
+  ctx.beginPath();ctx.arc(cx,cy,r,0,2*Math.PI);
+  ctx.strokeStyle='rgba(30,80,160,0.15)';
+  ctx.lineWidth=0.6;ctx.setLineDash([2,8]);ctx.stroke();ctx.setLineDash([]);
+}
+
+function drawGravLines(p){
+  if(!S.gravOn)return;
+  const nearby=planets.filter(q=>q.included&&q!==p)
+    .map(q=>({q,d:Math.hypot(q.x-p.x,q.y-p.y)}))
+    .sort((a,b)=>a.d-b.d).slice(0,2);
+  nearby.forEach(({q,d})=>{
+    if(d>180)return;
+    const alpha=Math.max(0,(180-d)/180)*0.16;
+    ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);
+    ctx.strokeStyle=`rgba(0,229,255,${alpha})`;ctx.lineWidth=0.7;ctx.stroke();
+  });
+}
+
+function drawSun(){
+  const cx=canvas.width/2,cy=canvas.height/2;
+  if(!isFinite(cx)||!isFinite(cy)||cx<=0||cy<=0) return;
+  const pulse=0.85+0.15*Math.sin(Date.now()/600);
+  const g1=ctx.createRadialGradient(cx,cy,0,cx,cy,36*pulse);
+  g1.addColorStop(0,'rgba(255,210,0,0.2)');g1.addColorStop(1,'rgba(255,100,0,0)');
+  ctx.beginPath();ctx.arc(cx,cy,36*pulse,0,2*Math.PI);ctx.fillStyle=g1;ctx.fill();
+  ctx.beginPath();ctx.arc(cx,cy,20,0,2*Math.PI);ctx.fillStyle='rgba(255,200,0,0.1)';ctx.fill();
+  const g2=ctx.createRadialGradient(cx-4,cy-4,0.5,cx,cy,14);
+  g2.addColorStop(0,'#fffacc');g2.addColorStop(0.5,'#ffd200');g2.addColorStop(1,'#ff8800');
+  ctx.beginPath();ctx.arc(cx,cy,14,0,2*Math.PI);ctx.fillStyle=g2;ctx.fill();
+  ctx.fillStyle='rgba(255,249,196,0.9)';
+  ctx.font='bold 8px "Share Tech Mono"';ctx.textAlign='center';
+  ctx.fillText('MCG',cx,cy+26);
+}
+
+function drawPlanet(p){
+  // Guard: skip if position not yet valid
+  if(!isFinite(p.x)||!isFinite(p.y)) return;
+  const r=pR(p);
+  if(!isFinite(r)||r<=0) return;
+  const [R,G,B]=h2r(p.colour);
+  // Trail
+  if(S.trail>0&&p.trail.length>1){
+    for(let i=1;i<p.trail.length;i++){
+      const [tx0,ty0]=p.trail[i-1],[tx1,ty1]=p.trail[i];
+      if(!isFinite(tx0)||!isFinite(ty0)||!isFinite(tx1)||!isFinite(ty1)) continue;
+      const a=(i/p.trail.length)*0.4;
+      ctx.beginPath();ctx.moveTo(tx0,ty0);ctx.lineTo(tx1,ty1);
+      ctx.strokeStyle=`rgba(${R},${G},${B},${a})`;ctx.lineWidth=1.3;ctx.stroke();
+    }
+  }
+  drawGravLines(p);
+  // Glow (inner radius must be > 0)
+  const gw=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*2.4);
+  gw.addColorStop(0,`rgba(${R},${G},${B},0.2)`);gw.addColorStop(1,`rgba(${R},${G},${B},0)`);
+  ctx.beginPath();ctx.arc(p.x,p.y,r*2.4,0,2*Math.PI);ctx.fillStyle=gw;ctx.fill();
+  // Body (offset highlight, inner radius clamped > 0)
+  const bg=ctx.createRadialGradient(p.x-r*.3,p.y-r*.3,0.5,p.x,p.y,r);
+  bg.addColorStop(0,'rgba(255,255,255,0.5)');bg.addColorStop(0.3,p.colour);bg.addColorStop(1,'rgba(0,0,0,0.65)');
+  ctx.beginPath();ctx.arc(p.x,p.y,r,0,2*Math.PI);ctx.fillStyle=bg;ctx.fill();
+  // Hover ring
+  if(tipP===p){
+    ctx.beginPath();ctx.arc(p.x,p.y,r+2.5,0,2*Math.PI);
+    ctx.strokeStyle=`rgba(${R},${G},${B},0.85)`;ctx.lineWidth=1.5;ctx.stroke();
+  }
+  // Label
+  if(r>7){
+    ctx.fillStyle='rgba(210,230,255,0.82)';
+    ctx.font=`${Math.min(r*.7,9)}px "Share Tech Mono"`;ctx.textAlign='center';
+    ctx.fillText(p.name.replace(/ (Oval|Stadium|Park|Ground|Gnd|Sportspark|Regional)$/,''),p.x,p.y+r+11);
+  }
+}
+
+function drawFlashes(){
+  collisionFlashes.forEach(f=>{
+    const t=f.age/f.maxAge;
+    const alpha=(1-t)*0.85;
+    const [R,G,B]=h2r(f.colour);
+    // expanding ring
+    const ring=ctx.createRadialGradient(f.x,f.y,f.r*t*0.3,f.x,f.y,f.r*(0.5+t*0.8));
+    ring.addColorStop(0,`rgba(255,255,255,${alpha*0.9})`);
+    ring.addColorStop(0.3,`rgba(${R},${G},${B},${alpha})`);
+    ring.addColorStop(1,`rgba(${R},${G},${B},0)`);
+    ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.5+t*0.8),0,2*Math.PI);
+    ctx.fillStyle=ring;ctx.fill();
+  });
+}
+let lastTs=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTs)/1000,0.1);
+  lastTs=ts;
+  const W=canvas.width,H=canvas.height;
+  if(!W||!H) { requestAnimationFrame(loop); return; }
+  ctx.clearRect(0,0,W,H);
+  const bgR=Math.max(W,H)*.72;
+  const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,bgR);
+  bg.addColorStop(0,'#060f28');bg.addColorStop(1,'#02060f');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  drawStars();
+
+  const included=planets.filter(p=>!p.isSun&&p.included);
+  included.forEach(drawOrbitGuide);
+
+  if(S.gravOn){
+    physicsStep(dt);
+  } else {
+    if(!S.paused){
+      const cx=W/2,cy=H/2,maxR=getMaxR(),maxD=getMaxDist();
+      included.forEach(p=>{
+        const nd=p.distKm/maxD, r=Math.pow(nd,.52)*maxR;
+        // v = sqrt(G*M/r), angular velocity ω = v/r
+        const G=G_BASE*S.gravity;
+        const v=Math.sqrt(G*planets[SUN_IDX].mass*SUN_FACTOR/Math.max(r,1));
+        const omega=(v/Math.max(r,1))*S.speed*dt*60;
+        p.angle=(p.angle+omega)%(2*Math.PI);
+        p.x=cx+r*Math.cos(p.angle); p.y=cy+r*Math.sin(p.angle);
+        if(S.trail>0){p.trail.push([p.x,p.y]);if(p.trail.length>S.trail)p.trail.shift();}
+      });
+    }
+  }
+
+  included.forEach(drawPlanet);
+  drawFlashes();
+  drawSun();
+
+  document.getElementById('hud').textContent=
+    `${included.length} PLANETS  ·  ${S.gravOn?'N-BODY GRAVITY':'KEPLER'}  ·  SPEED ×${S.speed.toFixed(1)}  ·  ${S.paused?'⏸ PAUSED':'▶ LIVE'}`;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Squarespace postMessage ───────────────────────────────────────────────────
+(function(){
+  function rh(){try{window.parent.postMessage({type:'iframeHeight',height:document.documentElement.scrollHeight},'*');}catch(e){}}
+  rh();window.addEventListener('resize',rh);
+  if(window.ResizeObserver)new ResizeObserver(()=>{resize();rh();}).observe(wrap);
+  else window.addEventListener('resize',()=>{resize();rh();});
+})();
+</script>
+
+<!--
+  SQUARESPACE EMBED
+  1. Host file on GitHub Pages / Netlify / Cloudflare Pages.
+  2. Add a full-bleed 0-padding section with a Code block containing:
+
+  <style>.sqs-block-code,.sqs-block-html{padding:0!important;margin:0!important;}</style>
+  <div id="sw" style="width:100%;height:100vh;overflow:hidden;">
+    <iframe id="sf" src="YOUR_URL" style="width:100%;height:100%;border:none;display:block;" scrolling="no" allowfullscreen></iframe>
+  </div>
+  <script>
+    window.addEventListener('message',function(e){if(e.data&&e.data.type==='iframeHeight'){var f=document.getElementById('sf');if(f)f.style.height=e.data.height+'px';}});
+    function sh(){var w=document.getElementById('sw');if(w)w.style.height=window.innerHeight+'px';}
+    sh();window.addEventListener('resize',sh);
+  <\/script>
+
+  3. Settings > Advanced > Code Injection > Header:
+  <style>.page-section{padding-top:0!important;padding-bottom:0!important;}</style>
+-->
+</body>
+</html>
