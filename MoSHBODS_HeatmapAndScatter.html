@@ -32,21 +32,23 @@
     font-weight: 300;
     min-height: 100vh;
     overflow-x: hidden;
+    max-width: 1000px;
+    margin: 0 auto;
   }
 
   header {
-    padding: 28px 40px 20px;
+    padding: 18px 20px 14px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: baseline;
-    gap: 20px;
+    gap: 16px;
     flex-wrap: wrap;
   }
 
   header h1 {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 900;
-    font-size: 2rem;
+    font-size: 1.6rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text);
@@ -62,8 +64,10 @@
 
   .layout {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 200px 1fr;
     min-height: calc(100vh - 85px);
+    max-width: 1000px;
+    width: 100%;
   }
 
   /* SIDEBAR */
@@ -284,11 +288,8 @@
     margin-left: auto;
   }
 
-  /* Heatmap view */
   .heatmap-area {
-    flex: 1;
     overflow: auto;
-    padding: 16px 20px;
   }
 
   /* Scatter view */
@@ -422,7 +423,7 @@
     </div>
 
     <!-- HEATMAP VIEW -->
-    <div id="view-heatmap" class="view-hidden heatmap-area" style="height:calc(100vh - 85px - 50px);overflow:auto;">
+    <div id="view-heatmap" class="view-hidden heatmap-area" style="height:calc(100vh - 85px - 50px);overflow:auto;padding:12px 8px 12px 8px;">
       <svg id="heatmap-chart"></svg>
     </div>
 
@@ -624,7 +625,7 @@ function renderScatter() {
 
   const W = container.clientWidth;
   const H = container.clientHeight;
-  const margin = { top: 30, right: 30, bottom: 50, left: 55 };
+  const margin = { top: 36, right: 16, bottom: 46, left: 48 };
   const iW = W - margin.left - margin.right;
   const iH = H - margin.top - margin.bottom;
 
@@ -641,12 +642,12 @@ function renderScatter() {
     g.append('rect').attr('x',q[0]).attr('y',q[1]).attr('width',q[2]).attr('height',q[3]).attr('fill',qColors[i]);
   });
 
-  // Quad labels
+  // Quad labels — positive off = right, positive def = top (both good)
   const qLabels = [
-    {x:iW*0.25, y:16, label:'Off ✓  Def ✓', col:'rgba(20,140,130,0.6)'},
-    {x:iW*0.75, y:16, label:'Off ✓  Def ✗', col:'rgba(150,120,0,0.5)'},
-    {x:iW*0.25, y:iH-8, label:'Off ✗  Def ✓', col:'rgba(150,120,0,0.5)'},
-    {x:iW*0.75, y:iH-8, label:'Off ✗  Def ✗', col:'rgba(180,50,50,0.6)'},
+    {x:iW*0.25, y:16,    label:'Off ✗  Def ✓', col:'rgba(150,120,0,0.5)'},
+    {x:iW*0.75, y:16,    label:'Off ✓  Def ✓', col:'rgba(20,140,130,0.6)'},
+    {x:iW*0.25, y:iH-8,  label:'Off ✗  Def ✗', col:'rgba(180,50,50,0.6)'},
+    {x:iW*0.75, y:iH-8,  label:'Off ✓  Def ✗', col:'rgba(150,120,0,0.5)'},
   ];
   qLabels.forEach(q => {
     g.append('text').attr('x',q.x).attr('y',q.y)
@@ -672,14 +673,14 @@ function renderScatter() {
   g.append('text').attr('x',iW/2).attr('y',iH+38).attr('text-anchor','middle')
     .attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','11px').attr('letter-spacing','0.08em')
     .text('OFFENSIVE RATING');
-  g.append('text').attr('transform',`rotate(-90)`).attr('x',-iH/2).attr('y',-42)
+  g.append('text').attr('transform',`rotate(-90)`).attr('x',-iH/2).attr('y',-38)
     .attr('text-anchor','middle').attr('fill','var(--text-dim)')
     .attr('font-family','Barlow Condensed,sans-serif').attr('font-size','11px').attr('letter-spacing','0.08em')
     .text('DEFENSIVE RATING');
 
-  // Year label
-  g.append('text').attr('x', iW).attr('y', -10).attr('text-anchor','end')
-    .attr('fill','var(--accent)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','28px').attr('font-weight','900')
+  // Year label — top left
+  g.append('text').attr('x', 4).attr('y', -8).attr('text-anchor','start')
+    .attr('fill','var(--accent)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','26px').attr('font-weight','900')
     .attr('id','scatter-year-label')
     .text(scatterYear);
 
@@ -705,7 +706,7 @@ function renderScatter() {
       .attr('x', xScale(offVal)).attr('y', yScale(defVal))
       .attr('text-anchor','middle').attr('dominant-baseline','middle')
       .attr('fill','#fff').attr('font-family','Barlow Condensed,sans-serif')
-      .attr('font-size','8px').attr('font-weight','700').attr('pointer-events','none')
+      .attr('font-size','12px').attr('font-weight','700').attr('pointer-events','none')
       .text(team.slice(0,3).toUpperCase());
 
     dotG.on('mouseover', (event) => {
@@ -750,7 +751,7 @@ playBtn.addEventListener('click', () => {
       scrubber.value = scatterYear;
       scrubberLabel.textContent = scatterYear;
       renderScatter();
-    }, 120);
+    }, 1000);
   }
 });
 
@@ -768,22 +769,25 @@ function renderHeatmap() {
   const allYears = [];
   for (let y = 1897; y <= 2026; y++) allYears.push(y);
 
-  const cellW = 7;
-  const rowH = 22;
-  const labelW = 145;
-  const totalW = labelW + allYears.length * cellW + 20;
-  const totalH = activeTeams.length * rowH + 40;
+  // Fit cells into available width: container is ~800px, label area 110px, right pad 8px
+  const availW = Math.min(container.clientWidth || 800, 800);
+  const labelW = 110;
+  const rightPad = 8;
+  const cellW = Math.floor((availW - labelW - rightPad) / allYears.length); // ~5px at 800
+  const rowH = 20;
+  const totalW = labelW + allYears.length * cellW + rightPad;
+  const totalH = activeTeams.length * rowH + 36;
 
   svg.attr('width', totalW).attr('height', totalH);
 
   const colorScale = d3.scaleDiverging(t => d3.interpolateRdYlGn(t))
     .domain([-0.8, 0, 0.8]);
 
-  // Year axis ticks
+  // Year axis ticks every 10 years
   const tickYears = allYears.filter(y => y % 10 === 0);
   tickYears.forEach(yr => {
     svg.append('text')
-      .attr('x', labelW + (yr - 1897) * cellW + cellW/2)
+      .attr('x', labelW + (yr - 1897) * cellW + cellW / 2)
       .attr('y', 10)
       .attr('text-anchor', 'middle')
       .attr('fill', 'var(--text-dim)')
@@ -796,20 +800,20 @@ function renderHeatmap() {
     const seasons = RAW[team];
     const seasonMap = {};
     seasons.forEach(row => { seasonMap[row[0]] = row; });
-    const y = 40 + ti * rowH;
+    const y = 36 + ti * rowH;
     const color = TEAM_COLORS[team] || '#888';
 
-    // Label with coloured dot + dark text
+    // Dot + right-aligned label: dot at labelW-8, text right-aligned ending at labelW-14
     const labelG = svg.append('g');
     labelG.append('circle')
-      .attr('cx', labelW - 20)
-      .attr('cy', y + rowH/2)
-      .attr('r', 5)
+      .attr('cx', labelW - 6)
+      .attr('cy', y + rowH / 2)
+      .attr('r', 4)
       .attr('fill', color);
     labelG.append('text')
-      .attr('x', labelW - 12)
-      .attr('y', y + rowH/2)
-      .attr('text-anchor', 'start')
+      .attr('x', labelW - 13)
+      .attr('y', y + rowH / 2)
+      .attr('text-anchor', 'end')
       .attr('dominant-baseline', 'middle')
       .attr('fill', 'var(--text)')
       .attr('font-family', 'Barlow Condensed, sans-serif')
@@ -824,7 +828,7 @@ function renderHeatmap() {
       const rect = svg.append('rect')
         .attr('x', labelW + (yr - 1897) * cellW)
         .attr('y', y)
-        .attr('width', cellW - 1)
+        .attr('width', Math.max(cellW - 1, 1))
         .attr('height', rowH - 2)
         .attr('fill', colorScale(val))
         .attr('rx', 1);
