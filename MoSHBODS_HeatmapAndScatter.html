@@ -25,13 +25,16 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     background: var(--bg);
     color: var(--text);
     font-family: 'Barlow', sans-serif;
     font-weight: 300;
-    min-height: 100vh;
-    overflow-x: hidden;
     max-width: 1000px;
     margin: 0 auto;
   }
@@ -302,22 +305,22 @@
   .scrubber-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 6px 20px 8px;
+    gap: 8px;
+    padding: 6px 12px 8px;
     border-top: 1px solid var(--border);
     background: var(--surface);
+    flex-shrink: 0;
   }
   .scrubber-label {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 0.7rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-dim);
-    min-width: 80px;
+    white-space: nowrap;
   }
-  #year-scrubber {
-    flex: 1;
+  input[type=range] {
     -webkit-appearance: none;
     height: 3px;
     background: var(--border);
@@ -325,7 +328,7 @@
     outline: none;
     cursor: pointer;
   }
-  #year-scrubber::-webkit-slider-thumb {
+  input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 14px;
     height: 14px;
@@ -333,6 +336,9 @@
     background: var(--accent);
     cursor: pointer;
     border: 2px solid var(--bg);
+  }
+  #year-scrubber {
+    flex: 1;
   }
   .scrubber-year {
     font-family: 'Barlow Condensed', sans-serif;
@@ -429,24 +435,28 @@
     </div>
 
     <!-- NETWORK VIEW -->
-    <div id="view-network" class="view-hidden chart-area" style="height:calc(100vh - 85px - 80px);">
+    <div id="view-network" class="view-hidden chart-area" style="height:calc(100vh - 85px - 110px);">
       <svg id="network-chart"></svg>
     </div>
 
     <!-- NETWORK CONTROLS (network only) -->
-    <div id="network-controls-row" class="view-hidden scrubber-row" style="gap:10px;flex-wrap:wrap;row-gap:6px;">
-      <span class="scrubber-label">Min |r|</span>
-      <input type="range" id="threshold-slider" min="0.1" max="0.9" value="0.4" step="0.05" style="flex:1;min-width:60px;">
-      <span class="scrubber-year" id="threshold-label" style="min-width:34px;">0.40</span>
-      <span class="scrubber-label" style="margin-left:8px;">Min seasons</span>
-      <input type="range" id="minseas-slider" min="5" max="60" value="15" step="5" style="flex:1;min-width:60px;">
-      <span class="scrubber-year" id="minseas-label" style="min-width:22px;">15</span>
-      <span class="scrubber-label" style="margin-left:8px;">From</span>
-      <input type="range" id="yearfrom-slider" min="1897" max="2026" value="1897" step="1" style="flex:2;min-width:80px;">
-      <span class="scrubber-year" id="yearfrom-label" style="min-width:36px;">1897</span>
-      <span class="scrubber-label">To</span>
-      <input type="range" id="yearto-slider" min="1897" max="2026" value="2026" step="1" style="flex:2;min-width:80px;">
-      <span class="scrubber-year" id="yearto-label" style="min-width:36px;">2026</span>
+    <div id="network-controls-row" class="view-hidden" style="border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+      <div class="scrubber-row" style="border-top:none;padding-bottom:2px;">
+        <span class="scrubber-label">Min |r|</span>
+        <input type="range" id="threshold-slider" min="0.1" max="0.9" value="0.4" step="0.05" style="flex:1;">
+        <span class="scrubber-year" id="threshold-label" style="min-width:34px;font-size:0.95rem;">0.40</span>
+        <span class="scrubber-label" style="margin-left:16px;">Min seasons</span>
+        <input type="range" id="minseas-slider" min="5" max="60" value="15" step="5" style="flex:1;">
+        <span class="scrubber-year" id="minseas-label" style="min-width:26px;font-size:0.95rem;">15</span>
+      </div>
+      <div class="scrubber-row" style="border-top:none;padding-top:2px;">
+        <span class="scrubber-label">From</span>
+        <input type="range" id="yearfrom-slider" min="1897" max="2026" value="1897" step="1" style="flex:1;">
+        <span class="scrubber-year" id="yearfrom-label" style="min-width:36px;font-size:0.95rem;">1897</span>
+        <span class="scrubber-label" style="margin-left:16px;">To</span>
+        <input type="range" id="yearto-slider" min="1897" max="2026" value="2026" step="1" style="flex:1;">
+        <span class="scrubber-year" id="yearto-label" style="min-width:36px;font-size:0.95rem;">2026</span>
+      </div>
     </div>
 
     <!-- SCRUBBER (scatter only) -->
@@ -486,6 +496,10 @@ const RAW = {"Adelaide":[[1991,0.0,0.0,-0.254,-0.054],[1992,-0.16,-0.034,0.096,0
 // Each row: [year, start_off, start_def, end_off, end_def]
 // idx:        0       1          2         3         4
 
+// Rename Kangaroos → North Melbourne
+RAW['North Melbourne'] = RAW['Kangaroos'];
+delete RAW['Kangaroos'];
+
 const TEAM_COLORS = {
   'Adelaide': '#e4002b',
   'Brisbane Bears': '#a2453d',
@@ -499,7 +513,7 @@ const TEAM_COLORS = {
   'Geelong': '#1c3c6e',
   'Gold Coast': '#e8242c',
   'Hawthorn': '#4d2004',
-  'Kangaroos': '#003b6e',
+  'North Melbourne': '#003b6e',
   'Melbourne': '#cc2031',
   'Port Adelaide': '#008aab',
   'Richmond': '#ffd200',
@@ -510,7 +524,7 @@ const TEAM_COLORS = {
   'Western Bulldogs': '#0039a6'
 };
 
-const CURRENT_TEAMS = new Set(['Adelaide','Brisbane Lions','Carlton','Collingwood','Essendon','Fremantle','GW Sydney','Geelong','Gold Coast','Hawthorn','Kangaroos','Melbourne','Port Adelaide','Richmond','St Kilda','Sydney','West Coast','Western Bulldogs']);
+const CURRENT_TEAMS = new Set(['Adelaide','Brisbane Lions','Carlton','Collingwood','Essendon','Fremantle','GW Sydney','Geelong','Gold Coast','Hawthorn','North Melbourne','Melbourne','Port Adelaide','Richmond','St Kilda','Sydney','West Coast','Western Bulldogs']);
 
 const ALL_TEAMS = Object.keys(RAW).sort();
 
