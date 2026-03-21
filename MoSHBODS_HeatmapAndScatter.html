@@ -64,7 +64,7 @@
 
   .layout {
     display: grid;
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: 230px 1fr;
     min-height: calc(100vh - 85px);
     max-width: 1000px;
     width: 100%;
@@ -387,6 +387,7 @@
       <div class="view-toggle">
         <button class="view-btn active" data-view="scatter">Offence vs Defence</button>
         <button class="view-btn" data-view="heatmap">Heatmap</button>
+        <button class="view-btn" data-view="network">Network</button>
       </div>
     </div>
 
@@ -425,6 +426,27 @@
     <!-- HEATMAP VIEW -->
     <div id="view-heatmap" class="view-hidden heatmap-area" style="height:calc(100vh - 85px - 50px);overflow:auto;padding:12px 8px 12px 8px;">
       <svg id="heatmap-chart"></svg>
+    </div>
+
+    <!-- NETWORK VIEW -->
+    <div id="view-network" class="view-hidden chart-area" style="height:calc(100vh - 85px - 80px);">
+      <svg id="network-chart"></svg>
+    </div>
+
+    <!-- NETWORK CONTROLS (network only) -->
+    <div id="network-controls-row" class="view-hidden scrubber-row" style="gap:10px;flex-wrap:wrap;row-gap:6px;">
+      <span class="scrubber-label">Min |r|</span>
+      <input type="range" id="threshold-slider" min="0.1" max="0.9" value="0.4" step="0.05" style="flex:1;min-width:60px;">
+      <span class="scrubber-year" id="threshold-label" style="min-width:34px;">0.40</span>
+      <span class="scrubber-label" style="margin-left:8px;">Min seasons</span>
+      <input type="range" id="minseas-slider" min="5" max="60" value="15" step="5" style="flex:1;min-width:60px;">
+      <span class="scrubber-year" id="minseas-label" style="min-width:22px;">15</span>
+      <span class="scrubber-label" style="margin-left:8px;">From</span>
+      <input type="range" id="yearfrom-slider" min="1897" max="2026" value="1897" step="1" style="flex:2;min-width:80px;">
+      <span class="scrubber-year" id="yearfrom-label" style="min-width:36px;">1897</span>
+      <span class="scrubber-label">To</span>
+      <input type="range" id="yearto-slider" min="1897" max="2026" value="2026" step="1" style="flex:2;min-width:80px;">
+      <span class="scrubber-year" id="yearto-label" style="min-width:36px;">2026</span>
     </div>
 
     <!-- SCRUBBER (scatter only) -->
@@ -569,6 +591,7 @@ document.querySelectorAll('.view-btn').forEach(btn => {
     document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentView = btn.dataset.view;
+    if (networkSimulation && currentView !== 'network') { networkSimulation.stop(); }
     showView(currentView);
     renderCurrentView();
   });
@@ -586,11 +609,14 @@ document.querySelectorAll('.metric-btn').forEach(btn => {
 function showView(view) {
   document.getElementById('view-scatter').classList.toggle('view-hidden', view !== 'scatter');
   document.getElementById('view-heatmap').classList.toggle('view-hidden', view !== 'heatmap');
+  document.getElementById('view-network').classList.toggle('view-hidden', view !== 'network');
   document.getElementById('scrubber-row').classList.toggle('view-hidden', view !== 'scatter');
+  document.getElementById('network-controls-row').classList.toggle('view-hidden', view !== 'network');
 }
 
 function renderCurrentView() {
   if (currentView === 'scatter') renderScatter();
+  else if (currentView === 'network') renderNetwork();
   else renderHeatmap();
 }
 
@@ -846,7 +872,257 @@ function renderHeatmap() {
 }
 
 // ============================================================
-// INIT
+// NETWORK VIEW
+// ============================================================
+
+let networkThreshold = 0.4;
+let networkMinSeas = 15;
+let networkYearFrom = 1897;
+let networkYearTo = 2026;
+let networkSimulation = null;
+
+document.getElementById('threshold-slider').addEventListener('input', function() {
+  networkThreshold = +this.value;
+  document.getElementById('threshold-label').textContent = networkThreshold.toFixed(2);
+  if (currentView === 'network') renderNetwork();
+});
+document.getElementById('minseas-slider').addEventListener('input', function() {
+  networkMinSeas = +this.value;
+  document.getElementById('minseas-label').textContent = networkMinSeas;
+  if (currentView === 'network') renderNetwork();
+});
+document.getElementById('yearfrom-slider').addEventListener('input', function() {
+  networkYearFrom = +this.value;
+  if (networkYearFrom > networkYearTo) { networkYearTo = networkYearFrom; document.getElementById('yearto-slider').value = networkYearTo; document.getElementById('yearto-label').textContent = networkYearTo; }
+  document.getElementById('yearfrom-label').textContent = networkYearFrom;
+  if (currentView === 'network') renderNetwork();
+});
+document.getElementById('yearto-slider').addEventListener('input', function() {
+  networkYearTo = +this.value;
+  if (networkYearTo < networkYearFrom) { networkYearFrom = networkYearTo; document.getElementById('yearfrom-slider').value = networkYearFrom; document.getElementById('yearfrom-label').textContent = networkYearFrom; }
+  document.getElementById('yearto-label').textContent = networkYearTo;
+  if (currentView === 'network') renderNetwork();
+});
+
+function pearson(a, b) {
+  // a, b: arrays of [year, val] — compute over shared years
+  const mapA = {}, mapB = {};
+  a.forEach(([y, v]) => mapA[y] = v);
+  b.forEach(([y, v]) => mapB[y] = v);
+  const shared = Object.keys(mapA).filter(y => mapB[y] !== undefined).map(Number);
+  if (shared.length < 3) return { r: null, n: shared.length };
+  const xs = shared.map(y => mapA[y]);
+  const ys = shared.map(y => mapB[y]);
+  const mx = xs.reduce((s,v)=>s+v,0)/xs.length;
+  const my = ys.reduce((s,v)=>s+v,0)/ys.length;
+  const num = xs.reduce((s,v,i)=>s+(v-mx)*(ys[i]-my),0);
+  const den = Math.sqrt(xs.reduce((s,v)=>s+(v-mx)**2,0) * ys.reduce((s,v)=>s+(v-my)**2,0));
+  return { r: den === 0 ? 0 : num/den, n: shared.length };
+}
+
+function buildNetworkData(teams, m) {
+  // Build series per team filtered to selected year range: [[year, val], ...]
+  const series = {};
+  teams.forEach(t => {
+    series[t] = RAW[t]
+      .filter(row => row[0] >= networkYearFrom && row[0] <= networkYearTo)
+      .map(row => [row[0], getVal(row, m)]);
+  });
+
+  const nodes = teams.map(t => ({ id: t, color: TEAM_COLORS[t] || '#888' }));
+  const links = [];
+
+  for (let i = 0; i < teams.length; i++) {
+    for (let j = i + 1; j < teams.length; j++) {
+      const { r, n } = pearson(series[teams[i]], series[teams[j]]);
+      if (r === null || n < networkMinSeas) continue;
+      if (Math.abs(r) >= networkThreshold) {
+        links.push({ source: teams[i], target: teams[j], r, n });
+      }
+    }
+  }
+  return { nodes, links };
+}
+
+function renderNetwork() {
+  const container = document.getElementById('view-network');
+  const svg = d3.select('#network-chart');
+  svg.selectAll('*').remove();
+  if (networkSimulation) { networkSimulation.stop(); networkSimulation = null; }
+
+  const W = container.clientWidth || 800;
+  const H = container.clientHeight || 500;
+  svg.attr('width', W).attr('height', H);
+
+  const activeTeams = ALL_TEAMS.filter(t => selectedTeams.has(t));
+  if (activeTeams.length < 2) {
+    svg.append('text').attr('x', W/2).attr('y', H/2).attr('text-anchor','middle')
+      .attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','14px')
+      .text('Select at least 2 teams');
+    return;
+  }
+
+  const { nodes, links } = buildNetworkData(activeTeams, metric);
+
+  // Legend keep-out zone dimensions (used by force below)
+  const legPadX = 12, legPadY = 14;
+  const legW = 160, legH = 58;
+
+  if (links.length === 0) {
+    svg.append('text').attr('x', W/2).attr('y', H/2).attr('text-anchor','middle')
+      .attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','13px')
+      .text('No pairs exceed the threshold — try lowering Min |r| or From/To range');
+    // Still draw the legend
+    const lg = svg.append('g').attr('transform', `translate(${legPadX}, ${legPadY})`);
+    lg.append('rect').attr('x',-4).attr('y',-4).attr('width', legW).attr('height', legH)
+      .attr('fill','var(--surface)').attr('fill-opacity',0.95).attr('rx',4).attr('stroke','var(--border)').attr('stroke-width',1);
+    [{col:'#1a9e97',label:'Positive correlation'},{col:'#c0392b',label:'Negative correlation'}].forEach(({col,label},i)=>{
+      lg.append('line').attr('x1',4).attr('x2',26).attr('y1',i*20+10).attr('y2',i*20+10).attr('stroke',col).attr('stroke-width',3).attr('stroke-linecap','round');
+      lg.append('text').attr('x',32).attr('y',i*20+14).attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','11px').text(label);
+    });
+    lg.append('text').attr('x',4).attr('y',50).attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','10px').attr('font-style','italic').text(`${networkYearFrom}–${networkYearTo}`);
+    return;
+  }
+
+  // Edge width scale
+  const maxR = d3.max(links, d => Math.abs(d.r));
+  const strokeW = d3.scaleLinear().domain([networkThreshold, Math.max(maxR, networkThreshold+0.01)]).range([1.5, 7]).clamp(true);
+
+  // Draw edges
+  const linkSel = svg.append('g').selectAll('line')
+    .data(links).enter().append('line')
+    .attr('stroke', d => d.r > 0 ? '#1a9e97' : '#c0392b')
+    .attr('stroke-width', d => strokeW(Math.abs(d.r)))
+    .attr('stroke-opacity', 0.7)
+    .attr('stroke-linecap', 'round');
+
+  // Draw nodes
+  const nodeG = svg.append('g').selectAll('g')
+    .data(nodes).enter().append('g')
+    .attr('cursor', 'grab')
+    .call(d3.drag()
+      .on('start', (event, d) => {
+        if (!event.active) networkSimulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('end', (event, d) => {
+        if (!event.active) networkSimulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    );
+
+  nodeG.append('circle')
+    .attr('r', 20)
+    .attr('fill', d => d.color)
+    .attr('fill-opacity', 0.88)
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 1.5);
+
+  nodeG.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'middle')
+    .attr('fill', '#fff')
+    .attr('font-family', 'Barlow Condensed, sans-serif')
+    .attr('font-size', '10px')
+    .attr('font-weight', '700')
+    .attr('pointer-events', 'none')
+    .text(d => d.id.slice(0, 3).toUpperCase());
+
+  // Tooltip on edges
+  linkSel
+    .on('mouseover', (event, d) => {
+      const sign = d.r > 0 ? 'positive' : 'negative';
+      const col  = d.r > 0 ? 'var(--positive)' : 'var(--negative)';
+      showTooltip(event, `
+        <div class="tt-team">${d.source.id || d.source} · ${d.target.id || d.target}</div>
+        <div class="tt-row"><span class="tt-label">Correlation</span><span class="tt-val" style="color:${col}">${d.r>=0?'+':''}${d.r.toFixed(3)}</span></div>
+        <div class="tt-row"><span class="tt-label">Direction</span><span class="tt-val">${sign}</span></div>
+        <div class="tt-row"><span class="tt-label">Shared seasons</span><span class="tt-val">${d.n}</span></div>
+      `);
+    })
+    .on('mouseleave', hideTooltip);
+
+  // Tooltip on nodes
+  nodeG.on('mouseover', (event, d) => {
+    const connected = links.filter(l =>
+      (l.source.id||l.source) === d.id || (l.target.id||l.target) === d.id
+    ).sort((a,b) => Math.abs(b.r) - Math.abs(a.r));
+    let html = `<div class="tt-team" style="color:${d.color}">${d.id}</div>`;
+    if (connected.length === 0) {
+      html += `<div style="color:var(--text-dim);font-size:0.75rem;margin-top:4px">No connections shown</div>`;
+    } else {
+      html += `<div style="color:var(--text-dim);font-size:0.7rem;margin:4px 0 2px;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.06em;text-transform:uppercase;">Strongest links</div>`;
+      connected.slice(0, 5).forEach(l => {
+        const other = (l.source.id||l.source) === d.id ? (l.target.id||l.target) : (l.source.id||l.source);
+        const col = l.r > 0 ? 'var(--positive)' : 'var(--negative)';
+        html += `<div class="tt-row"><span class="tt-label">${other}</span><span class="tt-val" style="color:${col}">${l.r>=0?'+':''}${l.r.toFixed(3)}</span></div>`;
+      });
+    }
+    showTooltip(event, html);
+  }).on('mouseleave', hideTooltip);
+
+  // Legend keep-out zone (top-left rectangle)
+  const noGoX = legPadX + legW + 10;  // nodes must be right of this OR below noGoY
+  const noGoY = legPadY + legH + 10;
+  const nodeR = 22;
+
+  function forceKeepOutLegend() {
+    return function() {
+      nodes.forEach(d => {
+        if (d.x - nodeR < noGoX && d.y - nodeR < noGoY) {
+          // Push whichever axis needs least movement to escape
+          const pushRight = noGoX - (d.x - nodeR);
+          const pushDown  = noGoY - (d.y - nodeR);
+          if (pushRight < pushDown) d.x += pushRight * 0.3;
+          else d.y += pushDown * 0.3;
+        }
+      });
+    };
+  }
+
+  // Force simulation
+  networkSimulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+      const base = 120;
+      return d.r > 0 ? base * (1 - Math.abs(d.r) * 0.5) : base * (1 + Math.abs(d.r) * 0.5);
+    }).strength(0.6))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide(26))
+    .force('keepOutLegend', forceKeepOutLegend())
+    .on('tick', () => {
+      linkSel
+        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      nodeG.attr('transform', d => {
+        const x = Math.max(nodeR, Math.min(W - nodeR, d.x));
+        const y = Math.max(nodeR, Math.min(H - nodeR, d.y));
+        return `translate(${x},${y})`;
+      });
+    });
+
+  // Legend rendered last — always on top of nodes
+  const legG = svg.append('g').attr('transform', `translate(${legPadX}, ${legPadY})`);
+  legG.append('rect').attr('x',-4).attr('y',-4).attr('width', legW).attr('height', legH)
+    .attr('fill','var(--surface)').attr('fill-opacity',0.95).attr('rx',4)
+    .attr('stroke','var(--border)').attr('stroke-width',1);
+  [
+    { col:'#1a9e97', label:'Positive correlation' },
+    { col:'#c0392b', label:'Negative correlation' }
+  ].forEach(({col, label}, i) => {
+    legG.append('line').attr('x1',4).attr('x2',26).attr('y1',i*20+10).attr('y2',i*20+10)
+      .attr('stroke',col).attr('stroke-width',3).attr('stroke-linecap','round');
+    legG.append('text').attr('x',32).attr('y',i*20+14)
+      .attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','11px')
+      .text(label);
+  });
+  legG.append('text').attr('x', 4).attr('y', 50)
+    .attr('fill','var(--text-dim)').attr('font-family','Barlow Condensed,sans-serif').attr('font-size','10px').attr('font-style','italic')
+    .text(`${networkYearFrom}–${networkYearTo}`);
+}
+
+// ============================================================
 // ============================================================
 buildTeamList();
 showView('scatter');
