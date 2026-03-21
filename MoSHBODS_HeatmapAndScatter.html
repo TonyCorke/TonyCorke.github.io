@@ -25,33 +25,37 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html, body {
+  html {
     height: 100%;
-    overflow: hidden;
   }
 
   body {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     background: var(--bg);
     color: var(--text);
     font-family: 'Barlow', sans-serif;
     font-weight: 300;
     max-width: 1000px;
     margin: 0 auto;
+    overflow: hidden;
   }
 
   header {
-    padding: 18px 20px 14px;
+    padding: 14px 20px 12px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: baseline;
     gap: 16px;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   header h1 {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 900;
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text);
@@ -61,14 +65,15 @@
 
   header p {
     color: var(--text-dim);
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     letter-spacing: 0.02em;
   }
 
   .layout {
     display: grid;
     grid-template-columns: 230px 1fr;
-    min-height: calc(100vh - 85px);
+    flex: 1;
+    min-height: 0;  /* critical — allows grid to shrink inside flex */
     max-width: 1000px;
     width: 100%;
   }
@@ -80,6 +85,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
   }
 
   .sidebar-section {
@@ -215,12 +221,15 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
   }
 
   .chart-area {
     flex: 1;
     position: relative;
     padding: 12px 20px 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   #main-chart {
@@ -291,9 +300,7 @@
     margin-left: auto;
   }
 
-  .heatmap-area {
-    overflow: auto;
-  }
+
 
   /* Scatter view */
   #scatter-chart {
@@ -425,17 +432,17 @@
   <main class="main">
 
     <!-- SCATTER VIEW -->
-    <div id="view-scatter" class="chart-area" style="height:calc(100vh - 85px - 110px);">
+    <div id="view-scatter" class="chart-area">
       <svg id="scatter-chart"></svg>
     </div>
 
     <!-- HEATMAP VIEW -->
-    <div id="view-heatmap" class="view-hidden heatmap-area" style="height:calc(100vh - 85px - 50px);overflow:auto;padding:12px 8px 12px 8px;">
+    <div id="view-heatmap" class="view-hidden chart-area" style="overflow:auto;padding:12px 8px;">
       <svg id="heatmap-chart"></svg>
     </div>
 
     <!-- NETWORK VIEW -->
-    <div id="view-network" class="view-hidden chart-area" style="height:calc(100vh - 85px - 110px);">
+    <div id="view-network" class="view-hidden chart-area">
       <svg id="network-chart"></svg>
     </div>
 
