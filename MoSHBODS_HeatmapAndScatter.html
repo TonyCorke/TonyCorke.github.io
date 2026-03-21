@@ -533,6 +533,32 @@ const TEAM_COLORS = {
 
 const CURRENT_TEAMS = new Set(['Adelaide','Brisbane Lions','Carlton','Collingwood','Essendon','Fremantle','GW Sydney','Geelong','Gold Coast','Hawthorn','North Melbourne','Melbourne','Port Adelaide','Richmond','St Kilda','Sydney','West Coast','Western Bulldogs']);
 
+const TEAM_ABBR = {
+  'Adelaide':          'ADE',
+  'Brisbane Bears':    'BRI',
+  'Brisbane Lions':    'BRI',
+  'Carlton':           'CAR',
+  'Collingwood':       'COL',
+  'Essendon':          'ESS',
+  'Fitzroy':           'FIT',
+  'Fremantle':         'FRE',
+  'GW Sydney':         'GWS',
+  'Geelong':           'GEE',
+  'Gold Coast':        'GC',
+  'Hawthorn':          'HAW',
+  'North Melbourne':   'NM',
+  'Melbourne':         'MEL',
+  'Port Adelaide':     'PA',
+  'Richmond':          'RIC',
+  'St Kilda':          'STK',
+  'Sydney':            'SYD',
+  'University':        'UNI',
+  'West Coast':        'WC',
+  'Western Bulldogs':  'WBD',
+};
+
+function abbr(team) { return TEAM_ABBR[team] || team.slice(0, 3).toUpperCase(); }
+
 const ALL_TEAMS = Object.keys(RAW).sort();
 
 // State
@@ -754,7 +780,7 @@ function renderScatter() {
       .attr('text-anchor','middle').attr('dominant-baseline','middle')
       .attr('fill','#fff').attr('font-family','Barlow Condensed,sans-serif')
       .attr('font-size','12px').attr('font-weight','700').attr('pointer-events','none')
-      .text(team.slice(0,3).toUpperCase());
+      .text(abbr(team));
 
     dotG.on('mouseover', (event) => {
       showTooltip(event, `
@@ -1045,10 +1071,10 @@ function renderNetwork() {
     .attr('dominant-baseline', 'middle')
     .attr('fill', '#fff')
     .attr('font-family', 'Barlow Condensed, sans-serif')
-    .attr('font-size', '10px')
+    .attr('font-size', '13px')
     .attr('font-weight', '700')
     .attr('pointer-events', 'none')
-    .text(d => d.id.slice(0, 3).toUpperCase());
+    .text(d => abbr(d.id));
 
   // Tooltip on edges
   linkSel
