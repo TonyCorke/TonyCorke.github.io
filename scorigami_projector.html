@@ -340,11 +340,11 @@ hr.sb-hr { border: none; border-top: 1px solid #dee2e6; margin: 10px 0; }
       </div>
       <hr class="result-divider">
       <div class="result-row">
-        <span class="result-label">Projected final (home)</span>
+        <span class="result-label">Mean projected final (home)</span>
         <span class="result-value" id="projHome">—</span>
       </div>
       <div class="result-row">
-        <span class="result-label">Projected final (away)</span>
+        <span class="result-label">Mean projected final (away)</span>
         <span class="result-value" id="projAway">—</span>
       </div>
       <hr class="result-divider">
@@ -381,7 +381,7 @@ hr.sb-hr { border: none; border-top: 1px solid #dee2e6; margin: 10px 0; }
         <div class="legend-item"><div class="legend-swatch ls-sg"></div><span>Scorigami within projected region</span></div>
         <div class="legend-item"><div class="legend-swatch ls-occ"></div><span>Existing score (frequency heatmap)</span></div>
         <div class="legend-item"><div class="legend-swatch ls-sg0"></div><span>Scorigami (outside projection)</span></div>
-        <div class="legend-item"><div class="legend-swatch ls-med"></div><span>Projected modal final score</span></div>
+        <div class="legend-item"><div class="legend-swatch ls-med"></div><span>Mean projected final score</span></div>
       </div>
     </div>
 
@@ -637,8 +637,11 @@ function runProjection() {
   if (ci50Set.size === 0 && sorted.length > 0) ci50Set.add(sorted[0][0]);
 
   // ── Summary stats ─────────────────────────────────────────
-  const [modeKey] = sorted[0];
-  const [medH, medA] = modeKey.split(',').map(Number);
+  // Mean is far more stable than mode with this sample size and score granularity
+  let sumH = 0, sumA = 0;
+  for (const [fh, fa] of finals) { sumH += fh; sumA += fa; }
+  const meanH = Math.round(sumH / finals.length);
+  const meanA = Math.round(sumA / finals.length);
 
   let scorigamiCount = 0, homeWinCount = 0, drawCount = 0, awayWinCount = 0;
   for (const [fh, fa] of finals) {
@@ -660,7 +663,7 @@ function runProjection() {
     if (scorigamiSet.has(`${w}-${l}`)) nScorigamis95++;
   }
 
-  projState = { ci50Set, ci95Set, medH, medA, scorigamiProb,
+  projState = { ci50Set, ci95Set, meanH, meanA, scorigamiProb,
                 homeWinProb, drawProb, awayWinProb,
                 nCells95: ci95Set.size, nScorigamis95 };
 
@@ -669,7 +672,7 @@ function runProjection() {
     `Q${quarter} · ${pctPlayed}% played · Current: ${curHome}–${curAway}`;
 
   renderPlot();
-  scrollToScore(medH, medA);
+  scrollToScore(meanH, meanA);
 }
 
 function getSamples(quarter, bucket) {
@@ -692,8 +695,8 @@ function updateResultPanel() {
   const pct100 = Math.round(p.scorigamiProb * 100);
   document.getElementById('bigProb').textContent        = fmt(p.scorigamiProb);
   document.getElementById('probFill').style.width       = Math.min(pct100, 100) + '%';
-  document.getElementById('projHome').textContent       = p.medH;
-  document.getElementById('projAway').textContent       = p.medA;
+  document.getElementById('projHome').textContent       = p.meanH;
+  document.getElementById('projAway').textContent       = p.meanA;
   document.getElementById('pHomeWin').textContent       = fmt(p.homeWinProb);
   document.getElementById('pDraw').textContent          = fmt(p.drawProb);
   document.getElementById('pAwayWin').textContent       = fmt(p.awayWinProb);
@@ -864,8 +867,8 @@ function renderPlot() {
 
   // ── Modal score marker ────────────────────────────────────
   if (projState) {
-    const { medH, medA } = projState;
-    const win  = Math.max(medH, medA), lose = Math.min(medH, medA);
+    const { meanH, meanA } = projState;
+    const win  = Math.max(meanH, meanA), lose = Math.min(meanH, meanA);
     const { x: mx, y: my } = scoreToCanvas(win, lose);
     const r = Math.max(5, Math.min(cellW * 0.7, 11));
     ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI*2);
