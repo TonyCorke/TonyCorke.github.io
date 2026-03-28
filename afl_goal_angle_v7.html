@@ -27,13 +27,13 @@
   #ctrl label { font-size: 14px; color: #555; white-space: nowrap; }
   #ctrl input[type=range] { flex: 1; min-width: 120px; accent-color: #2a6496; }
   #post-val { font-size: 15px; font-weight: 500; color: #111; min-width: 48px; }
-  #afl-info { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  #afl-info { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .afl-stat {
     background: #efefea; border-radius: 8px;
-    padding: 10px 16px; flex: 1; min-width: 100px;
+    padding: 8px 12px; flex: 1; min-width: 80px;
   }
-  .afl-stat .lbl { font-size: 12px; color: #666; margin-bottom: 2px; }
-  .afl-stat .val { font-size: 20px; font-weight: 500; color: #111; }
+  .afl-stat .lbl { font-size: 11px; color: #666; margin-bottom: 2px; line-height: 1.3; }
+  .afl-stat .val { font-size: 18px; font-weight: 500; color: #111; }
   #afl-hint { font-size: 13px; color: #777; margin-top: 8px; text-align: center; }
 
   @media (prefers-color-scheme: dark) {
@@ -45,7 +45,7 @@
     .afl-stat .lbl { color: #888; }
     .afl-stat .val { color: #e8e8e8; }
     #afl-hint { color: #888; }
-    #afl-canvas { border-color: rgba(255,255,255,0.12); }
+    #afl-canvas { border-color: rgba(255,255,255,0.12); background: #111; }
   }
 </style>
 </head>
@@ -59,7 +59,9 @@
   </div>
   <canvas id="afl-canvas"></canvas>
   <div id="afl-info">
-    <div class="afl-stat"><div class="lbl">Goal angle</div><div class="val" id="stat-angle">—</div></div>
+    <div class="afl-stat"><div class="lbl">1. Left behind → left goal</div><div class="val" id="stat-left">—</div></div>
+    <div class="afl-stat"><div class="lbl">Goal posts</div><div class="val" id="stat-angle">—</div></div>
+    <div class="afl-stat"><div class="lbl">2. Right goal → right behind</div><div class="val" id="stat-right">—</div></div>
     <div class="afl-stat"><div class="lbl">Distance from goal</div><div class="val" id="stat-dist">—</div></div>
     <div class="afl-stat"><div class="lbl">Left / right of centre</div><div class="val" id="stat-offset">—</div></div>
   </div>
@@ -79,9 +81,8 @@
   const MAX_DIST  = 60;
   const a_el      = FIELD_W_M / 2;
   const EL_CY     = HALF_H_M;
-
-  const ISO_MIN = 5;
-  const ISO_MAX = 30;
+  const ISO_MIN   = 5;
+  const ISO_MAX   = 30;
 
   function getPostSep() { return parseFloat(slider.value); }
   function getBehindX(ps) { return ps * 1.5; }
@@ -93,9 +94,9 @@
     return (mx / a_el) ** 2 + ((my - EL_CY) / b) ** 2 <= 1;
   }
 
-  function computeAngle(mx, my, ps) {
-    const lx = -ps/2 - mx, ly = -my;
-    const rx =  ps/2 - mx, ry = -my;
+  function subtendedAngle(mx, my, ax, bx) {
+    const lx = ax - mx, ly = -my;
+    const rx = bx - mx, ry = -my;
     const dot  = lx*rx + ly*ry;
     const cosA = dot / (Math.sqrt(lx*lx+ly*ly) * Math.sqrt(rx*rx+ry*ry));
     return Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
@@ -159,6 +160,35 @@
   function mToC(mx, my, m) { return [m.ox + mx*m.scale, m.oy + my*m.scale]; }
   function cToM(cx, cy, m) { return [(cx - m.ox)/m.scale, (cy - m.oy)/m.scale]; }
 
+  function overlaps(a, b) {
+    const pad = 4;
+    return a.x-pad < b.x+b.w && a.x+a.w+pad > b.x && a.y-pad < b.y+b.h && a.y+a.h+pad > b.y;
+  }
+
+  function placeBadge(prefX, prefY, bW, bH, placed, W, H) {
+    const candidates = [];
+    for (let r = 0; r <= 100; r += 6) {
+      for (let a = 0; a < 360; a += 18) {
+        const rad = a * Math.PI / 180;
+        candidates.push([prefX + r * Math.cos(rad), prefY + r * Math.sin(rad)]);
+      }
+    }
+    for (const [cx, cy] of candidates) {
+      const x = Math.max(2, Math.min(W - bW - 2, cx - bW/2));
+      const y = Math.max(2, Math.min(H - bH - 2, cy - bH/2));
+      const rect = { x, y, w: bW, h: bH };
+      if (!placed.some(p => overlaps(rect, p))) {
+        placed.push(rect);
+        return rect;
+      }
+    }
+    const x = Math.max(2, Math.min(W - bW - 2, prefX - bW/2));
+    const y = Math.max(2, Math.min(H - bH - 2, prefY - bH/2));
+    const rect = { x, y, w: bW, h: bH };
+    placed.push(rect);
+    return rect;
+  }
+
   let clickPos = null;
   let metrics  = getMetrics();
 
@@ -178,13 +208,13 @@
     const postColor  = isDark ? '#f5c842' : '#c8820a';
     const behindCol  = isDark ? '#bbb'    : '#777';
     const arcColor   = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
-    const angleLineC = isDark ? 'rgba(120,180,255,0.9)'  : 'rgba(0,80,200,0.75)';
-    const angleFillC = isDark ? 'rgba(120,180,255,0.18)' : 'rgba(0,80,200,0.12)';
-    const angleArcC  = isDark ? 'rgba(120,180,255,0.55)' : 'rgba(0,80,200,0.45)';
-    const angleTxtC  = isDark ? '#78b4ff' : '#0050c8';
+    const goalLineC  = isDark ? 'rgba(120,180,255,0.95)' : 'rgba(0,80,200,0.85)';
+    const leftArcC   = isDark ? 'rgba(255,160,80,0.95)'  : 'rgba(180,80,0,0.85)';
+    const rightArcC  = isDark ? 'rgba(80,210,150,0.95)'  : 'rgba(0,140,80,0.85)';
     const dotColor   = isDark ? '#ff9f5a' : '#d04000';
-    const labelBg    = isDark ? 'rgba(25,25,25,0.9)' : 'rgba(255,255,255,0.93)';
+    const labelBg    = isDark ? 'rgba(25,25,25,0.92)' : 'rgba(255,255,255,0.95)';
     const labelTxt   = isDark ? '#e8e8e8' : '#111';
+    const labelSub   = isDark ? '#aaa' : '#555';
 
     const [, goalY]  = mToC(0, 0, m);
     const [ecx, ecy] = mToC(0, EL_CY, m);
@@ -235,14 +265,13 @@
       }
       ctx.stroke();
       ctx.globalAlpha = 1;
-
       if (major || deg === ISO_MIN) {
         let best = null;
         for (const p of pts) { if (!best || p[0] > best[0]) best = p; }
         if (best) {
           const [lx, ly] = mToC(best[0] + 1.5, best[1], m);
           if (lx < W - 5) {
-            ctx.font         = `${major ? '500' : '400'} ${Math.round(scale*(major?3.4:2.8))}px sans-serif`;
+            ctx.font         = `${major?'500':'400'} ${Math.round(scale*(major?3.4:2.8))}px sans-serif`;
             ctx.fillStyle    = color;
             ctx.textAlign    = 'left';
             ctx.textBaseline = 'middle';
@@ -273,8 +302,7 @@
       const theta = Math.PI * (1 - i/720);
       const fx = ARC_R*Math.cos(theta), fy = ARC_R*Math.sin(theta);
       const [cx2, cy2] = mToC(fx, fy, m);
-      const inside = inField(fx, fy, BEHIND_X);
-      if (inside) {
+      if (inField(fx, fy, BEHIND_X)) {
         if (!drawing) { ctx.moveTo(cx2,cy2); drawing=true; } else ctx.lineTo(cx2,cy2);
       } else {
         if (drawing) { ctx.stroke(); ctx.beginPath(); drawing=false; }
@@ -303,68 +331,159 @@
       ctx.beginPath(); ctx.arc(px,py,4,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
     });
 
+    // Post labels
     const fs_lbl = Math.round(fs_base * 0.88);
     ctx.font=`${fs_lbl}px sans-serif`; ctx.fillStyle=lineColor; ctx.textAlign='center';
     const lblY = goalY - scale*7;
     [[-POST_SEP/2,'G'],[POST_SEP/2,'G'],[-BEHIND_X,'B'],[BEHIND_X,'B']].forEach(([dx,lbl]) => {
       ctx.fillText(lbl, mToC(dx,0,m)[0], lblY);
     });
+
+    // "1" and "2" between relevant post pairs, just on the field
+    const mid1X_m = (-BEHIND_X + (-POST_SEP/2)) / 2;
+    const mid2X_m = ( POST_SEP/2 +  BEHIND_X)   / 2;
+    const numY_m  = 1.8;
+    const [num1cx, num1cy] = mToC(mid1X_m, numY_m, m);
+    const [num2cx, num2cy] = mToC(mid2X_m, numY_m, m);
+    const fs_num = Math.round(scale * 3.8);
+    ctx.font = `500 ${fs_num}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = leftArcC;  ctx.fillText('1', num1cx, num1cy);
+    ctx.fillStyle = rightArcC; ctx.fillText('2', num2cx, num2cy);
+    ctx.textBaseline = 'alphabetic';
+
+    // Permanent wing labels near halfway
+    const wingY_m  = HALF_H_M - 8;
+    const [w1cx, w1cy] = mToC(-45, wingY_m, m);
+    const [w2cx, w2cy] = mToC( 45, wingY_m, m);
+    const fs_wing = Math.round(fs_base * 0.82);
+    ctx.font = `500 ${fs_wing}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = leftArcC;  ctx.fillText('1. Left posts',  w1cx, w1cy);
+    ctx.fillStyle = rightArcC; ctx.fillText('2. Right posts', w2cx, w2cy);
+    ctx.textBaseline = 'alphabetic';
+
+    // Width label
     const [,halfLblY] = mToC(0, HALF_H_M - 4, m);
+    ctx.font=`${fs_lbl}px sans-serif`; ctx.fillStyle=lineColor; ctx.textAlign='center';
     ctx.fillText('← 140m wide →', ox, halfLblY);
 
-    // Click annotation
+    // ── Click annotation ──
     if (clickPos) {
-      const [cmx,cmy] = clickPos;
-      const [cpx,cpy] = mToC(cmx, cmy, m);
-      const lp = mToC(-POST_SEP/2, 0, m);
-      const rp = mToC( POST_SEP/2, 0, m);
-      const angleLR = Math.atan2(lp[1]-cpy, lp[0]-cpx);
-      const angleRR = Math.atan2(rp[1]-cpy, rp[0]-cpx);
-      const angle   = computeAngle(cmx, cmy, POST_SEP);
+      const [cmx, cmy] = clickPos;
+      const [cpx, cpy] = mToC(cmx, cmy, m);
 
-      ctx.beginPath(); ctx.moveTo(cpx,cpy); ctx.lineTo(lp[0],lp[1]);
-      ctx.strokeStyle=angleLineC; ctx.lineWidth=2; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cpx,cpy); ctx.lineTo(rp[0],rp[1]); ctx.stroke();
+      const [lBx, lBy] = mToC(-BEHIND_X,   0, m);
+      const [lGx, lGy] = mToC(-POST_SEP/2, 0, m);
+      const [rGx, rGy] = mToC( POST_SEP/2, 0, m);
+      const [rBx, rBy] = mToC( BEHIND_X,   0, m);
 
-      const arcR2  = Math.min(26*scale, 36);
-      const startA = Math.min(angleLR, angleRR);
-      const endA   = Math.max(angleLR, angleRR);
-      ctx.beginPath(); ctx.moveTo(cpx,cpy); ctx.arc(cpx,cpy,arcR2,startA,endA); ctx.closePath();
-      ctx.fillStyle=angleFillC; ctx.fill();
-      ctx.strokeStyle=angleArcC; ctx.lineWidth=1; ctx.stroke();
+      const angleGoal  = subtendedAngle(cmx, cmy, -POST_SEP/2,  POST_SEP/2);
+      const angleLeft  = subtendedAngle(cmx, cmy, -BEHIND_X,   -POST_SEP/2);
+      const angleRight = subtendedAngle(cmx, cmy,  POST_SEP/2,  BEHIND_X);
 
-      const angleTxt = angle.toFixed(1)+'°';
-      const fs_a = Math.round(fs_base*0.95);
-      ctx.font=`500 ${fs_a}px sans-serif`;
-      const tw=ctx.measureText(angleTxt).width, pX=10, pY=6;
-      const bW=tw+pX*2, bH=fs_a+pY*2, lbx=cpx-bW/2, lby=cpy+16;
-      ctx.fillStyle=labelBg; ctx.beginPath(); ctx.roundRect(lbx,lby,bW,bH,6); ctx.fill();
-      ctx.strokeStyle=angleArcC; ctx.lineWidth=1; ctx.stroke();
-      ctx.fillStyle=angleTxtC; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(angleTxt, cpx, lby+bH/2); ctx.textBaseline='alphabetic';
+      function drawWedge(p1x, p1y, p2x, p2y, color) {
+        const a1 = Math.atan2(p1y - cpy, p1x - cpx);
+        const a2 = Math.atan2(p2y - cpy, p2x - cpx);
+        let diff = a2 - a1;
+        while (diff >  Math.PI) diff -= 2*Math.PI;
+        while (diff < -Math.PI) diff += 2*Math.PI;
+        ctx.beginPath(); ctx.moveTo(cpx,cpy); ctx.lineTo(p1x,p1y);
+        ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cpx,cpy); ctx.lineTo(p2x,p2y);
+        ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+        const arcR = Math.min(18*scale, 26);
+        ctx.beginPath(); ctx.moveTo(cpx,cpy);
+        ctx.arc(cpx, cpy, arcR, a1, a1+diff, diff < 0);
+        ctx.closePath();
+        ctx.globalAlpha = 0.18; ctx.fillStyle = color; ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+      }
 
-      ctx.beginPath(); ctx.arc(cpx,cpy,5.5,0,Math.PI*2); ctx.fillStyle=dotColor; ctx.fill();
+      drawWedge(lBx, lBy, lGx, lGy, leftArcC);
+      drawWedge(rGx, rGy, rBx, rBy, rightArcC);
+      drawWedge(lGx, lGy, rGx, rGy, goalLineC);
 
+      // Badge sizing
+      const fs_sub  = Math.round(fs_base * 0.70);
+      const fs_ang  = Math.round(fs_base * 0.95);
+      const pX = 10, pY = 6, lineGap = 3;
+      const badgeH = pY + fs_sub + lineGap + fs_ang + pY;
+
+      // Goal posts badge: directly behind (downfield of) the red dot
+      const goalBadgeOffset = Math.round(scale * 8);
+      const goalPrefX = cpx;
+      const goalPrefY = cpy + goalBadgeOffset;
+
+      const badges = [
+        { subtitle: 'Goal posts',    angle: angleGoal.toFixed(1)+'°',  color: goalLineC, prefX: goalPrefX, prefY: goalPrefY },
+        { subtitle: '1. Left posts', angle: angleLeft.toFixed(1)+'°',  color: leftArcC,  prefX: w1cx, prefY: w1cy },
+        { subtitle: '2. Right posts',angle: angleRight.toFixed(1)+'°', color: rightArcC, prefX: w2cx, prefY: w2cy },
+      ];
+
+      for (const badge of badges) {
+        ctx.font = `${fs_sub}px sans-serif`;
+        const sw = ctx.measureText(badge.subtitle).width;
+        ctx.font = `500 ${fs_ang}px sans-serif`;
+        const aw = ctx.measureText(badge.angle).width;
+        badge.bW = Math.max(sw, aw) + pX*2;
+        badge.bH = badgeH;
+      }
+
+      // Reserve distance badge space
+      const fs2 = Math.round(fs_base * 0.78);
       const distTxt = cmy.toFixed(1)+'m from goal';
       const sideStr = cmx < -0.2 ? 'left' : cmx > 0.2 ? 'right' : '';
       const offTxt  = Math.abs(cmx) < 0.2 ? 'on centre line' : Math.abs(cmx).toFixed(1)+'m '+sideStr;
-      const fs2 = Math.round(fs_base*0.78);
-      ctx.font=`500 ${fs2}px sans-serif`;
-      const l1w=ctx.measureText(distTxt).width;
-      ctx.font=`${fs2}px sans-serif`;
-      const l2w=ctx.measureText(offTxt).width;
-      const lbPX=10, lbPY=7, lbGap=5;
-      const lbBW=Math.max(l1w,l2w)+lbPX*2, lbBH=fs2*2+lbGap+lbPY*2;
-      let lbLeft=cpx+14; if(lbLeft+lbBW>W-8) lbLeft=cpx-14-lbBW;
-      let lbTop=cpy-lbBH/2; if(lbTop+lbBH>lby-4) lbTop=lby-4-lbBH; if(lbTop<4) lbTop=4;
-      ctx.fillStyle=labelBg; ctx.beginPath(); ctx.roundRect(lbLeft,lbTop,lbBW,lbBH,6); ctx.fill();
-      ctx.strokeStyle=isDark?'rgba(255,160,90,0.5)':'rgba(180,60,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
-      ctx.fillStyle=labelTxt; ctx.textAlign='left'; ctx.textBaseline='top';
-      ctx.font=`500 ${fs2}px sans-serif`; ctx.fillText(distTxt, lbLeft+lbPX, lbTop+lbPY);
-      ctx.font=`${fs2}px sans-serif`; ctx.fillStyle=isDark?'#bbb':'#555';
-      ctx.fillText(offTxt, lbLeft+lbPX, lbTop+lbPY+fs2+lbGap); ctx.textBaseline='alphabetic';
+      ctx.font = `500 ${fs2}px sans-serif`;
+      const dw1 = ctx.measureText(distTxt).width;
+      ctx.font = `${fs2}px sans-serif`;
+      const dw2 = ctx.measureText(offTxt).width;
+      const distBW = Math.max(dw1,dw2) + 20, distBH = fs2*2 + 5 + 14;
+      let distLeft = cpx + 14;
+      if (distLeft + distBW > W - 8) distLeft = cpx - 14 - distBW;
+      const distTop = Math.max(4, cpy - distBH - 10);
 
-      document.getElementById('stat-angle').textContent  = angle.toFixed(1)+'°';
+      const placed = [{ x: distLeft, y: distTop, w: distBW, h: distBH }];
+
+      for (const badge of badges) {
+        badge.rect = placeBadge(badge.prefX, badge.prefY, badge.bW, badge.bH, placed, W, H);
+      }
+
+      // Draw badges
+      for (const badge of badges) {
+        const { rect, color, subtitle, angle, bW, bH } = badge;
+        ctx.fillStyle = labelBg;
+        ctx.beginPath(); ctx.roundRect(rect.x, rect.y, bW, bH, 5); ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.font = `${fs_sub}px sans-serif`;
+        ctx.fillStyle = labelSub;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(subtitle, rect.x + bW/2, rect.y + pY);
+        ctx.font = `500 ${fs_ang}px sans-serif`;
+        ctx.fillStyle = color;
+        ctx.fillText(angle, rect.x + bW/2, rect.y + pY + fs_sub + lineGap);
+        ctx.textBaseline = 'alphabetic';
+      }
+
+      // Dot drawn on top
+      ctx.beginPath(); ctx.arc(cpx,cpy,5.5,0,Math.PI*2); ctx.fillStyle=dotColor; ctx.fill();
+
+      // Distance badge
+      ctx.fillStyle = labelBg;
+      ctx.beginPath(); ctx.roundRect(distLeft, distTop, distBW, distBH, 6); ctx.fill();
+      ctx.strokeStyle = isDark?'rgba(255,160,90,0.4)':'rgba(180,60,0,0.25)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle = labelTxt; ctx.textAlign='left'; ctx.textBaseline='top';
+      ctx.font=`500 ${fs2}px sans-serif`;
+      ctx.fillText(distTxt, distLeft+10, distTop+7);
+      ctx.font=`${fs2}px sans-serif`; ctx.fillStyle=isDark?'#bbb':'#555';
+      ctx.fillText(offTxt, distLeft+10, distTop+7+fs2+5);
+      ctx.textBaseline='alphabetic';
+
+      document.getElementById('stat-angle').textContent  = angleGoal.toFixed(1)+'°';
+      document.getElementById('stat-left').textContent   = angleLeft.toFixed(1)+'°';
+      document.getElementById('stat-right').textContent  = angleRight.toFixed(1)+'°';
       document.getElementById('stat-dist').textContent   = cmy.toFixed(1)+'m';
       document.getElementById('stat-offset').textContent =
         Math.abs(cmx) < 0.2 ? 'on centre' : Math.abs(cmx).toFixed(1)+'m '+sideStr;
