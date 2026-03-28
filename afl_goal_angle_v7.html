@@ -1,0 +1,418 @@
+
+<style>
+  #afl-wrap { padding: 1rem 0; font-family: var(--font-sans); }
+  #afl-canvas { display: block; width: 100%; cursor: crosshair; border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); }
+  #ctrl { display: flex; align-items: center; gap: 14px; margin: 0 0 10px; flex-wrap: wrap; }
+  #ctrl label { font-size: 14px; color: var(--color-text-secondary); white-space: nowrap; }
+  #ctrl input[type=range] { flex: 1; min-width: 120px; }
+  #post-val { font-size: 15px; font-weight: 500; color: var(--color-text-primary); min-width: 48px; }
+  #afl-info { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .afl-stat { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 16px; flex: 1; min-width: 100px; }
+  .afl-stat .lbl { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 2px; }
+  .afl-stat .val { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+  #afl-hint { font-size: 13px; color: var(--color-text-secondary); margin-top: 8px; text-align: center; }
+</style>
+
+<div id="afl-wrap">
+  <div id="ctrl">
+    <label>Goal post width</label>
+    <input type="range" id="post-slider" min="5" max="10" step="0.1" value="6.4">
+    <span id="post-val">6.4m</span>
+  </div>
+  <canvas id="afl-canvas"></canvas>
+  <div id="afl-info">
+    <div class="afl-stat"><div class="lbl">Goal angle</div><div class="val" id="stat-angle">—</div></div>
+    <div class="afl-stat"><div class="lbl">Distance from goal</div><div class="val" id="stat-dist">—</div></div>
+    <div class="afl-stat"><div class="lbl">Left / right of centre</div><div class="val" id="stat-offset">—</div></div>
+  </div>
+  <div id="afl-hint">Click anywhere on the field (within 60m of goals) to see the goal angle</div>
+</div>
+
+<script>
+(function() {
+  const canvas  = document.getElementById('afl-canvas');
+  const ctx     = canvas.getContext('2d');
+  const slider  = document.getElementById('post-slider');
+  const postVal = document.getElementById('post-val');
+
+  // Field constants
+  const FIELD_W_M = 140;   // widest at halfway
+  const HALF_H_M  = 80;    // half-length (we show this half only)
+  const ARC_R     = 50;
+  const MAX_DIST  = 60;
+
+  // Ellipse design:
+  // - Must pass through (±BEHIND_X, 0) — behind posts at goal line
+  // - Must be widest (x = ±70) at y = HALF_H_M = 80
+  // - Ellipse centre at (0, 0) with semi-axes a (across) and b (along).
+  //   Standard form: (x/a)^2 + (y/b)^2 = 1
+  //   Widest at y=0: that gives x=±a. But we want widest at y=80, not y=0.
+  //
+  // So the ellipse must be TILTED or OFF-CENTRE vertically.
+  // Place ellipse centre at (0, C) for some C > 0.
+  // (x/a)^2 + ((y-C)/b)^2 = 1
+  // Widest at y=C: x=±a=±70 → a=70. ✓ We want C=80 (widest at halfway).
+  // Passes through (BEHIND_X, 0):
+  //   (BEHIND_X/70)^2 + ((0-80)/b)^2 = 1
+  //   (80/b)^2 = 1 - (BEHIND_X/70)^2
+  //   b = 80 / sqrt(1 - (BEHIND_X/70)^2)
+  //
+  // This b > 80 always (since BEHIND_X > 0), meaning the ellipse extends
+  // further than 80m below the goal line — but we only show y=0..80, so that's fine.
+  // The ellipse is centred at (0, 80) with a=70, b = 80/sqrt(1-(BEHIND_X/70)^2).
+
+  const a_el = FIELD_W_M / 2; // 70, fixed
+  const EL_CY = HALF_H_M;     // ellipse centre y = 80 (halfway)
+
+  function getB(behindX) {
+    return HALF_H_M / Math.sqrt(1 - (behindX / a_el) ** 2);
+  }
+
+  function getPostSep() { return parseFloat(slider.value); }
+  function getBehindX(postSep) { return postSep * 1.5; }
+
+  // Is point inside ellipse?
+  function inEllipse(mx, my, behindX) {
+    const b = getB(behindX);
+    return (mx / a_el) ** 2 + ((my - EL_CY) / b) ** 2 <= 1;
+  }
+
+  function inField(mx, my, behindX) {
+    if (my < 0 || my > HALF_H_M) return false;
+    return inEllipse(mx, my, behindX);
+  }
+
+  // Ellipse x-width at a given y
+  function ellipseXatY(y, behindX) {
+    const b = getB(behindX);
+    const term = 1 - ((y - EL_CY) / b) ** 2;
+    if (term < 0) return 0;
+    return a_el * Math.sqrt(term);
+  }
+
+  // Find y where 50m arc intersects ellipse boundary (bisection)
+  function arcEllipseIntersect(behindX) {
+    const b = getB(behindX);
+    function f(y) {
+      const x2 = ARC_R * ARC_R - y * y;
+      if (x2 < 0) return 1;
+      return x2 / (a_el * a_el) + (y - EL_CY) ** 2 / (b * b) - 1;
+    }
+    const f0 = f(0), fR = f(ARC_R);
+    if (f0 >= 0) return null; // origin outside ellipse — shouldn't happen
+    if (fR <= 0) return null; // whole arc inside ellipse
+    let lo = 0, hi = ARC_R;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi) / 2;
+      if (f(lo) * f(mid) <= 0) hi = mid; else lo = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  function computeAngle(mx, my, postSep) {
+    const lx = -postSep / 2 - mx, ly = -my;
+    const rx =  postSep / 2 - mx, ry = -my;
+    const dot  = lx * rx + ly * ry;
+    const cosA = dot / (Math.sqrt(lx*lx+ly*ly) * Math.sqrt(rx*rx+ry*ry));
+    return Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
+  }
+
+  function getMetrics() {
+    const W = canvas.offsetWidth || 700;
+    canvas.width  = W;
+    canvas.height = Math.round(W * 0.62);
+    const H    = canvas.height;
+    const padX = W * 0.07;
+    const padT = H * 0.13;
+    const padB = H * 0.06;
+    const scale = Math.min((W - padX * 2) / FIELD_W_M, (H - padT - padB) / HALF_H_M);
+    const ox = W / 2;
+    const oy = padT;
+    return { W, H, scale, ox, oy };
+  }
+
+  function mToC(mx, my, m) { return [m.ox + mx * m.scale, m.oy + my * m.scale]; }
+  function cToM(cx, cy, m) { return [(cx - m.ox) / m.scale, (cy - m.oy) / m.scale]; }
+
+  let clickPos = null;
+  let metrics  = getMetrics();
+
+  function draw() {
+    const m = metrics;
+    const { W, H, scale, ox, oy } = m;
+    const POST_SEP = getPostSep();
+    const BEHIND_X = getBehindX(POST_SEP);
+    const b_el     = getB(BEHIND_X);
+    const intersectY = arcEllipseIntersect(BEHIND_X);
+
+    ctx.clearRect(0, 0, W, H);
+
+    const isDark     = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const grassColor = isDark ? '#1a2e1a' : '#d4edba';
+    const lineColor  = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.42)';
+    const gridColor  = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)';
+    const postColor  = isDark ? '#f5c842' : '#c8820a';
+    const behindCol  = isDark ? '#bbb'    : '#777';
+    const arcColor   = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
+    const angleLineC = isDark ? 'rgba(120,180,255,0.9)'  : 'rgba(0,80,200,0.75)';
+    const angleFillC = isDark ? 'rgba(120,180,255,0.18)' : 'rgba(0,80,200,0.12)';
+    const angleArcC  = isDark ? 'rgba(120,180,255,0.55)' : 'rgba(0,80,200,0.45)';
+    const angleTxtC  = isDark ? '#78b4ff' : '#0050c8';
+    const dotColor   = isDark ? '#ff9f5a' : '#d04000';
+    const labelBg    = isDark ? 'rgba(25,25,25,0.9)' : 'rgba(255,255,255,0.93)';
+    const labelTxt   = isDark ? '#e8e8e8' : '#111';
+
+    const [, goalY]   = mToC(0, 0, m);
+    const [ecx, ecy]  = mToC(0, EL_CY, m);
+    const erx = a_el * scale;
+    const ery = b_el * scale;
+
+    // Ellipse angle at y=0 (goal line)
+    const sinT   = (goalY - ecy) / ery;
+    const tTop   = Math.asin(Math.max(-1, Math.min(1, sinT)));
+    const tStart = tTop;
+    const tEnd   = Math.PI - tTop;
+
+    // ── Field fill ──
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, goalY, W, H - goalY);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grassColor;
+    ctx.fill();
+    ctx.restore();
+
+    // ── 10m grid lines (perpendicular to goal, ie horizontal) ──
+    // Lines at y = 10, 20, 30, 40, 50, 60, 70m from goal line
+    // Each line runs from left boundary to right boundary of ellipse at that y
+    // Centred on x=0 (midpoint of goal posts), spaced every 10m laterally too.
+    // Per the spec: lines run at 90° to goal at x = 0, ±10, ±20, ±30... (lateral spacing)
+    // AND at y = 10, 20, 30... (depth spacing).
+    // Actually re-reading: "lines that start at the boundary and run at 90 degrees to the goals
+    // spaced at 10m intervals — exactly between the goal posts then 10m to either side".
+    // This means VERTICAL lines (perpendicular to goal line = parallel to goal direction),
+    // at x = 0, ±10, ±20, ±30... running from goal line (y=0) down to boundary.
+
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([4, 4]);
+    for (let xm = 0; xm <= a_el; xm += 10) {
+      const xvals = xm === 0 ? [0] : [xm, -xm];
+      xvals.forEach(x => {
+        // Find y where this x hits the ellipse boundary
+        // (x/a)^2 + ((y-C)/b)^2 = 1 → y = C ± b*sqrt(1-(x/a)^2)
+        const term = 1 - (x / a_el) ** 2;
+        if (term < 0) return;
+        const yBound = EL_CY - b_el * Math.sqrt(term); // upper intersection (smaller y)
+        // Only draw from y=0 down to min(HALF_H_M, yBound_lower)
+        // Upper boundary of ellipse at this x: EL_CY - b*sqrt(term)
+        // If yBound < 0 the ellipse boundary is above the goal line → line starts at y=0
+        const yStart = Math.max(0, yBound);
+        const yEnd   = HALF_H_M;
+        if (yStart >= yEnd) return;
+        const [cx1, cy1] = mToC(x, yStart, m);
+        const [cx2, cy2] = mToC(x, yEnd, m);
+        ctx.beginPath(); ctx.moveTo(cx1, cy1); ctx.lineTo(cx2, cy2); ctx.stroke();
+      });
+    }
+    ctx.setLineDash([]);
+
+    // ── Ellipse boundary arc (lower half visible) ──
+    ctx.beginPath();
+    ctx.ellipse(ecx, ecy, erx, ery, 0, tStart, tEnd, false);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+
+    // ── Goal line between behind posts ──
+    const [bRx, bRy] = mToC( BEHIND_X, 0, m);
+    const [bLx, bLy] = mToC(-BEHIND_X, 0, m);
+    ctx.beginPath(); ctx.moveTo(bLx, bLy); ctx.lineTo(bRx, bRy);
+    ctx.strokeStyle = lineColor; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // ── 50m arc — walk and draw only inside ellipse ──
+    const arcPx = ARC_R * scale;
+    const steps  = 720;
+    ctx.strokeStyle = arcColor;
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([Math.round(scale * 1.2), Math.round(scale * 0.8)]);
+    ctx.beginPath();
+    let drawing = false;
+    for (let i = 0; i <= steps; i++) {
+      const theta  = Math.PI * (1 - i / steps);
+      const fx     =  ARC_R * Math.cos(theta);
+      const fy     =  ARC_R * Math.sin(theta);
+      const inside = inField(fx, fy, BEHIND_X);
+      const [cx2, cy2] = mToC(fx, fy, m);
+      if (inside) {
+        if (!drawing) { ctx.moveTo(cx2, cy2); drawing = true; }
+        else ctx.lineTo(cx2, cy2);
+      } else {
+        if (drawing) { ctx.stroke(); ctx.beginPath(); drawing = false; }
+      }
+    }
+    if (drawing) ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 50m label
+    const fs_base = Math.round(scale * 4.0);
+    ctx.font      = `${fs_base}px var(--font-sans)`;
+    ctx.fillStyle = lineColor;
+    if (intersectY !== null) {
+      const ix = Math.sqrt(Math.max(0, ARC_R * ARC_R - intersectY * intersectY));
+      const [lx, ly] = mToC(ix + 2.5, intersectY - 1, m);
+      ctx.textAlign = 'left';
+      ctx.fillText('50m', lx, ly);
+    } else {
+      ctx.textAlign = 'center';
+      ctx.fillText('50m', ox + arcPx + scale * 3, goalY + scale * 3);
+    }
+
+    // ── Posts ──
+    const postDefs = [
+      { dx: -BEHIND_X,   col: behindCol, h: scale*4, w: 2.5 },
+      { dx: -POST_SEP/2, col: postColor, h: scale*6, w: 3.5 },
+      { dx:  POST_SEP/2, col: postColor, h: scale*6, w: 3.5 },
+      { dx:  BEHIND_X,   col: behindCol, h: scale*4, w: 2.5 },
+    ];
+    postDefs.forEach(({ dx, col, h, w }) => {
+      const [px, py] = mToC(dx, 0, m);
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - h);
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fillStyle = col; ctx.fill();
+    });
+
+    // Post labels
+    const fs_lbl = Math.round(fs_base * 0.88);
+    ctx.font = `${fs_lbl}px var(--font-sans)`;
+    ctx.fillStyle = lineColor; ctx.textAlign = 'center';
+    const lblY = goalY - scale * 7;
+    [[-POST_SEP/2,'G'],[POST_SEP/2,'G'],[-BEHIND_X,'B'],[BEHIND_X,'B']].forEach(([dx, lbl]) => {
+      ctx.fillText(lbl, mToC(dx, 0, m)[0], lblY);
+    });
+
+    // Width label near halfway
+    ctx.font = `${fs_lbl}px var(--font-sans)`;
+    ctx.fillStyle = lineColor; ctx.textAlign = 'center';
+    const [, halfLblY] = mToC(0, HALF_H_M - 4, m);
+    ctx.fillText('← 140m wide →', ox, halfLblY);
+
+    // ── Click annotation ──
+    if (clickPos) {
+      const [cmx, cmy] = clickPos;
+      const [cpx, cpy] = mToC(cmx, cmy, m);
+      const lp = mToC(-POST_SEP / 2, 0, m);
+      const rp = mToC( POST_SEP / 2, 0, m);
+      const angleLR = Math.atan2(lp[1] - cpy, lp[0] - cpx);
+      const angleRR = Math.atan2(rp[1] - cpy, rp[0] - cpx);
+      const angle   = computeAngle(cmx, cmy, POST_SEP);
+
+      ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(lp[0], lp[1]);
+      ctx.strokeStyle = angleLineC; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(rp[0], rp[1]);
+      ctx.stroke();
+
+      const arcR2  = Math.min(26 * scale, 36);
+      const startA = Math.min(angleLR, angleRR);
+      const endA   = Math.max(angleLR, angleRR);
+      ctx.beginPath(); ctx.moveTo(cpx, cpy);
+      ctx.arc(cpx, cpy, arcR2, startA, endA); ctx.closePath();
+      ctx.fillStyle = angleFillC; ctx.fill();
+      ctx.strokeStyle = angleArcC; ctx.lineWidth = 1; ctx.stroke();
+
+      // Angle badge below dot
+      const angleTxt = angle.toFixed(1) + '°';
+      const fs_a = Math.round(fs_base * 0.95);
+      ctx.font = `500 ${fs_a}px var(--font-sans)`;
+      const tw = ctx.measureText(angleTxt).width;
+      const pX = 10, pY = 6;
+      const bW = tw + pX * 2, bH = fs_a + pY * 2;
+      const lbx = cpx - bW / 2, lby = cpy + 16;
+      ctx.fillStyle = labelBg;
+      ctx.beginPath(); ctx.roundRect(lbx, lby, bW, bH, 6); ctx.fill();
+      ctx.strokeStyle = angleArcC; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = angleTxtC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(angleTxt, cpx, lby + bH / 2);
+      ctx.textBaseline = 'alphabetic';
+
+      // Dot
+      ctx.beginPath(); ctx.arc(cpx, cpy, 5.5, 0, Math.PI * 2);
+      ctx.fillStyle = dotColor; ctx.fill();
+
+      // Distance/offset badge
+      const distTxt   = cmy.toFixed(1) + 'm from goal';
+      const sideStr   = cmx < -0.2 ? 'left' : cmx > 0.2 ? 'right' : '';
+      const offsetTxt = Math.abs(cmx) < 0.2 ? 'on centre line' : Math.abs(cmx).toFixed(1) + 'm ' + sideStr;
+      const fs2 = Math.round(fs_base * 0.78);
+      ctx.font = `500 ${fs2}px var(--font-sans)`;
+      const l1w = ctx.measureText(distTxt).width;
+      ctx.font = `${fs2}px var(--font-sans)`;
+      const l2w = ctx.measureText(offsetTxt).width;
+      const lbPX = 10, lbPY = 7, lbGap = 5;
+      const lbBW = Math.max(l1w, l2w) + lbPX * 2;
+      const lbBH = fs2 * 2 + lbGap + lbPY * 2;
+      let lbLeft = cpx + 14;
+      if (lbLeft + lbBW > W - 8) lbLeft = cpx - 14 - lbBW;
+      let lbTop = cpy - lbBH / 2;
+      if (lbTop + lbBH > lby - 4) lbTop = lby - 4 - lbBH;
+      if (lbTop < 4) lbTop = 4;
+      ctx.fillStyle = labelBg;
+      ctx.beginPath(); ctx.roundRect(lbLeft, lbTop, lbBW, lbBH, 6); ctx.fill();
+      ctx.strokeStyle = isDark ? 'rgba(255,160,90,0.5)' : 'rgba(180,60,0,0.3)';
+      ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = labelTxt; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.font = `500 ${fs2}px var(--font-sans)`;
+      ctx.fillText(distTxt, lbLeft + lbPX, lbTop + lbPY);
+      ctx.font = `${fs2}px var(--font-sans)`;
+      ctx.fillStyle = isDark ? '#bbb' : '#555';
+      ctx.fillText(offsetTxt, lbLeft + lbPX, lbTop + lbPY + fs2 + lbGap);
+      ctx.textBaseline = 'alphabetic';
+
+      document.getElementById('stat-angle').textContent  = angle.toFixed(1) + '°';
+      document.getElementById('stat-dist').textContent   = cmy.toFixed(1) + 'm';
+      document.getElementById('stat-offset').textContent =
+        Math.abs(cmx) < 0.2 ? 'on centre' : Math.abs(cmx).toFixed(1) + 'm ' + sideStr;
+    }
+  }
+
+  canvas.addEventListener('click', function(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sr   = canvas.width / rect.width;
+    const [mx, my] = cToM((e.clientX - rect.left) * sr, (e.clientY - rect.top) * sr, metrics);
+    const dist = Math.sqrt(mx * mx + my * my);
+    const POST_SEP = getPostSep();
+    const BEHIND_X = getBehindX(POST_SEP);
+    if (!inField(mx, my, BEHIND_X)) {
+      document.getElementById('afl-hint').textContent = 'Click within the field boundary.';
+      clickPos = null; draw(); return;
+    }
+    if (dist > MAX_DIST) {
+      document.getElementById('afl-hint').textContent = 'Too far from goal — stay within 60m.';
+      clickPos = null; draw(); return;
+    }
+    document.getElementById('afl-hint').textContent = 'Click anywhere else to compare';
+    clickPos = [mx, my]; draw();
+  });
+
+  canvas.addEventListener('mousemove', function(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sr   = canvas.width / rect.width;
+    const [mx, my] = cToM((e.clientX - rect.left) * sr, (e.clientY - rect.top) * sr, metrics);
+    const dist = Math.sqrt(mx * mx + my * my);
+    const BEHIND_X = getBehindX(getPostSep());
+    canvas.style.cursor = (inField(mx, my, BEHIND_X) && dist <= MAX_DIST) ? 'crosshair' : 'default';
+  });
+
+  slider.addEventListener('input', function() {
+    postVal.textContent = parseFloat(this.value).toFixed(1) + 'm';
+    draw();
+  });
+
+  window.addEventListener('resize', function() { metrics = getMetrics(); draw(); });
+  metrics = getMetrics();
+  draw();
+})();
+</script>
