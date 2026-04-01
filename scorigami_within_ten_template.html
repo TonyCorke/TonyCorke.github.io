@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFL Scorigami Distance</title>
+<style>
+/* ── Reset & base ───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  background: #f4f6f9;
+  color: #333;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+#sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: 295px;
+  height: 100vh;
+  overflow-y: auto;
+  background: #fff;
+  border-right: 1px solid #dee2e6;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+
+#main {
+  margin-left: 295px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Sidebar header ─────────────────────────────────────────────────────── */
+.sb-header {
+  background: #003087;
+  color: #fff;
+  padding: 10px 14px 9px;
+  flex-shrink: 0;
+}
+.sb-title-main { font-size: 1.05em; font-weight: 700; line-height: 1.2; }
+.sb-subtitle   { font-size: 0.72em; opacity: 0.75; margin-top: 2px; }
+
+/* ── Sidebar body ───────────────────────────────────────────────────────── */
+.sb-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sb-section { margin-bottom: 10px; }
+.sb-label {
+  display: block;
+  font-size: 0.78em;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 4px;
+}
+hr.sb-hr { border: none; border-top: 1px solid #dee2e6; margin: 10px 0; }
+
+/* ── Scope toggle ───────────────────────────────────────────────────────── */
+.scope-toggle {
+  display: flex;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f8f9fa;
+}
+.scope-btn {
+  flex: 1;
+  padding: 5px 4px;
+  font-size: 0.76em;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.scope-btn + .scope-btn { border-left: 1px solid #dee2e6; }
+.scope-btn.active { background: #003087; color: #fff; }
+.scope-btn:not(.active):hover { background: #e9ecef; }
+
+/* ── Team selectors ─────────────────────────────────────────────────────── */
+select {
+  width: 100%;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 5px 7px;
+  font-size: 0.82em;
+  background: #fff;
+  color: #333;
+  outline: none;
+  cursor: pointer;
+}
+select:focus { border-color: #003087; box-shadow: 0 0 0 2px rgba(0,48,135,0.1); }
+select:disabled { background: #f8f9fa; color: #aaa; cursor: default; }
+
+/* ── Stat boxes ─────────────────────────────────────────────────────────── */
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.stat-box {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.stat-label {
+  font-size: 0.68em;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 1px;
+}
+.stat-val {
+  font-size: 1.15em;
+  font-weight: 700;
+  color: #003087;
+  line-height: 1.2;
+}
+
+/* ── Colour scale legend ─────────────────────────────────────────────────── */
+.scale-bar-wrap {
+  position: relative;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid #dee2e6;
+}
+#scaleBar {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.scale-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7em;
+  color: #888;
+  margin-top: 3px;
+}
+
+/* ── Main topbar ─────────────────────────────────────────────────────────── */
+.main-topbar {
+  background: #fff;
+  border-bottom: 1px solid #dee2e6;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  min-height: 38px;
+}
+.main-topbar-title { font-size: 0.88em; font-weight: 600; color: #333; }
+.data-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78em;
+  color: #666;
+}
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ced4da;
+  flex-shrink: 0;
+}
+.status-dot.loading { background: #f0a500; animation: pulse 1s infinite; }
+.status-dot.ready   { background: #28a745; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Plot card ───────────────────────────────────────────────────────────── */
+.plot-card {
+  flex: 1;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin: 8px;
+  margin-bottom: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.plot-card-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 6px 10px;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: #555;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.plot-card-header .hint {
+  font-weight: 400;
+  color: #999;
+  font-size: 0.9em;
+  margin-left: auto;
+}
+.plot-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+canvas#mainPlot { display: block; cursor: crosshair; }
+
+/* ── Zoom controls ──────────────────────────────────────────────────────── */
+.zoom-controls {
+  position: absolute;
+  bottom: 10px; right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 10;
+}
+.zoom-btn {
+  width: 28px; height: 28px;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  color: #555;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1em;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: all 0.12s;
+}
+.zoom-btn:hover { border-color: #003087; color: #003087; background: #f0f4ff; }
+
+/* ── Axis labels ────────────────────────────────────────────────────────── */
+.axis-label-x {
+  position: absolute;
+  bottom: 5px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7em; color: #999;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  pointer-events: none;
+}
+.axis-label-y {
+  position: absolute;
+  top: 50%; left: 3px;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center;
+  font-size: 0.7em; color: #999;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  white-space: nowrap; pointer-events: none;
+}
+
+/* ── Timeline card ──────────────────────────────────────────────────────── */
+.timeline-card {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin: 8px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.timeline-card-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 6px 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.timeline-card-title { font-size: 0.85em; font-weight: 600; color: #333; }
+.timeline-card-sub   { font-size: 0.75em; color: #888; }
+canvas#timelinePlot  { display: block; width: 100%; }
+
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
+#tooltip {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  padding: 8px 11px;
+  pointer-events: none;
+  z-index: 1000;
+  display: none;
+  font-size: 0.78em;
+  line-height: 1.55;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+#tooltip .tt-score {
+  font-size: 1.2em; font-weight: 700; color: #003087; margin-bottom: 3px;
+}
+#tooltip .tt-label {
+  font-size: 0.82em; font-weight: 600; color: #999;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+#tooltip .tt-val { color: #333; }
+#tooltip .tt-hot  { color: #c0392b; font-weight: 700; }
+#tooltip .tt-warm { color: #e07020; font-weight: 600; }
+#tooltip .tt-cool { color: #2980b9; }
+
+/* ── Loading overlay ────────────────────────────────────────────────────── */
+#loadingOverlay {
+  position: fixed; inset: 0;
+  background: #fff;
+  z-index: 9999;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px;
+  transition: opacity 0.4s;
+}
+#loadingOverlay.fade-out { opacity: 0; pointer-events: none; }
+.loading-logo { font-size: 1.4em; font-weight: 700; color: #003087; }
+.loading-ring {
+  width: 36px; height: 36px;
+  border: 4px solid rgba(0,48,135,0.12);
+  border-top-color: #003087;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-bar-wrap {
+  width: 200px; height: 3px;
+  background: #dee2e6; border-radius: 2px; overflow: hidden;
+}
+.loading-bar {
+  height: 100%; width: 0%;
+  background: #003087; border-radius: 2px;
+  transition: width 0.3s;
+}
+.loading-msg { font-size: 0.78em; color: #888; letter-spacing: 0.04em; }
+
+/* ── Hypothetical controls ───────────────────────────────────────────────── */
+.hyp-badge {
+  display: inline-block;
+  background: rgba(39,174,96,0.12);
+  border: 1px solid #27ae60;
+  color: #1a7a33;
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-size: 0.82em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+.clear-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.78em;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: center;
+}
+.clear-btn:hover { border-color: #c0392b; color: #c0392b; background: #fdf2f2; }
+.clear-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #adb5bd; }
+
+/* ── Click-reveal legend ─────────────────────────────────────────────────── */
+.reveal-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+.reveal-swatch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.76em;
+  color: #444;
+}
+.reveal-dot {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.12);
+}
+.reveal-swatch-label { flex: 1; }
+.reveal-count {
+  font-size: 0.88em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #888;
+  min-width: 24px;
+  text-align: right;
+}
+.reveal-count.has-count { color: #333; }
+
+/* ── Blank canvas hint overlay ───────────────────────────────────────────── */
+#blankHint {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+  user-select: none;
+}
+.bh-icon { font-size: 2.4em; margin-bottom: 10px; line-height: 1; }
+.bh-text {
+  font-size: 1em;
+  color: #c8d0da;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.bh-sub {
+  font-size: 0.78em;
+  color: #d4dae2;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+/* ── Selected-score pill ─────────────────────────────────────────────────── */
+#selectedScorePill {
+  position: absolute;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,48,135,0.88);
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 4px 13px;
+  border-radius: 20px;
+  pointer-events: none;
+  display: none;
+  z-index: 6;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="loading-ring"></div>
+  <div class="loading-logo">AFL Scorigami Distance</div>
+  <div class="loading-bar-wrap"><div class="loading-bar" id="loadingBar"></div></div>
+  <div class="loading-msg" id="loadingMsg">Initialising…</div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+<div id="sidebar">
+  <div class="sb-header">
+    <div class="sb-title-main">AFL Scorigami Distance</div>
+    <div class="sb-subtitle">Click any score to reveal nearby Scorigamis</div>
+  </div>
+
+  <div class="sb-body">
+
+    <!-- Scope selector -->
+    <div class="sb-section">
+      <span class="sb-label">Scope</span>
+      <div class="scope-toggle">
+        <button class="scope-btn active" id="btnAll"  onclick="setScope('all')">All Teams</button>
+        <button class="scope-btn"        id="btnOne"  onclick="setScope('one')">One Team</button>
+        <button class="scope-btn"        id="btnTwo"  onclick="setScope('two')">Head-to-Head</button>
+      </div>
+    </div>
+
+    <!-- Team A -->
+    <div class="sb-section" id="teamASection" style="display:none">
+      <span class="sb-label" id="teamALabel">Team</span>
+      <select id="teamA"></select>
+    </div>
+
+    <!-- Team B -->
+    <div class="sb-section" id="teamBSection" style="display:none">
+      <span class="sb-label">Opponent</span>
+      <select id="teamB"></select>
+    </div>
+
+    <hr class="sb-hr">
+
+    <!-- Time selector -->
+    <div class="sb-section">
+      <span class="sb-label">Scorigami Status As Of</span>
+      <select id="seasonSelect">
+        <option value="current">Today (latest data)</option>
+      </select>
+    </div>
+
+    <hr class="sb-hr">
+
+    <!-- Stats -->
+    <div class="sb-section">
+      <span class="sb-label">Summary</span>
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-label">Games</div>
+          <div class="stat-val" id="statGames">–</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Unique Scores</div>
+          <div class="stat-val" id="statUnique">–</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Dist = 1</div>
+          <div class="stat-val" id="statDist1">–</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Dist ≤ 3</div>
+          <div class="stat-val" id="statDist3">–</div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="sb-hr">
+
+    <!-- Click-reveal legend (hidden until a score is clicked) -->
+    <div class="sb-section" id="revealLegendSection" style="display:none">
+      <span class="sb-label">Scorigamis from clicked score</span>
+      <div class="reveal-legend" id="revealLegend"></div>
+      <button class="clear-btn" id="clearClickBtn" style="margin-top:8px" onclick="clearClickedScore()">
+        ✕ Clear selection
+      </button>
+    </div>
+
+    <!-- How-to hint (shown when nothing is clicked) -->
+    <div class="sb-section" id="howToSection">
+      <span class="sb-label">How to Use</span>
+      <div style="font-size:0.76em;color:#888;line-height:1.6">
+        <b style="color:#555">Click</b> any point on the grid to reveal all
+        unplayed scorelines (Scorigamis) within 10 scoring shots, colour-coded
+        by distance.<br><br>
+        Each scoring shot is either a <b style="color:#555">goal (+6)</b> or
+        a <b style="color:#555">behind (+1)</b> to either team.<br><br>
+        <b style="color:#555">Scroll</b> to zoom · <b style="color:#555">drag</b> to pan
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <div class="main-topbar">
+    <div class="main-topbar-title" id="plotTitle">All teams — distance to nearest scorigami</div>
+    <div class="data-status">
+      <div class="status-dot loading" id="statusDot"></div>
+      <span id="statusText">Loading…</span>
+    </div>
+  </div>
+
+  <div class="plot-card">
+    <div class="plot-card-header">
+      <span>Winning Score (x-axis) × Losing Score (y-axis)</span>
+      <span class="hint" id="plotHint">Click any score to reveal nearby Scorigamis · scroll to zoom · drag to pan</span>
+    </div>
+    <div class="plot-container" id="plotContainer">
+      <canvas id="mainPlot"></canvas>
+      <div id="blankHint">
+        <div class="bh-icon">🎯</div>
+        <div class="bh-text">Click any score to explore</div>
+        <div class="bh-sub">Scorigamis within 10 scoring shots<br>will be revealed, colour-coded by distance</div>
+      </div>
+      <div id="selectedScorePill"></div>
+      <div class="axis-label-x">Winning Score →</div>
+      <div class="axis-label-y">Losing Score →</div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="zoomIn()"    title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="zoomOut()"   title="Zoom out">−</button>
+        <button class="zoom-btn" onclick="resetView()" title="Reset"
+                style="font-size:0.68em;font-weight:700">RST</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="timeline-card">
+    <div class="timeline-card-header">
+      <span class="timeline-card-title">Mean Distance to Nearest Scorigami — by Season</span>
+      <span class="timeline-card-sub" id="timelineSub">
+        Average across all played scorelines each season (lower = closer to new territory)
+      </span>
+    </div>
+    <canvas id="timelinePlot" height="110"></canvas>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// DATA — injected by build_scorigami.R
+// ═══════════════════════════════════════════════════════
+
+/* %%SCORIGAMI_DATA%% */
+
+// ── Global state ─────────────────────────────────────────────────────────────
+let allGames = [];
+let seasons  = [];
+
+// The full set of (win-lose) strings ever played — the "seen" universe
+let globalSeenSet = new Set();
+
+// Cumulative seen set by season end (for time selector)
+let seenBySeasonEnd = {};
+
+// Currently active seen set (respects time selector)
+let activeSeenSet = new Set();
+
+// Currently displayed scoreline set (respects scope + time)
+// Maps "win-lose" => count of times played under current scope
+let scopeOccMap  = new Map();
+
+// Precomputed BFS distance cache: "win-lose" => min shots to nearest scorigami
+// (relative to activeSeenSet)
+let distCache    = new Map();
+let distCacheKey = '';   // invalidation token
+
+let scope       = 'all';  // 'all' | 'one' | 'two'
+let teamA       = '';
+let teamB       = '';
+let currentSeason = 'current';
+
+// Observed distance range for the current scope/season — recomputed in rebuildAndRender
+let distRange = { min: 1, max: 1 };
+
+// ── Click-reveal state ────────────────────────────────────────────────────────
+// When the user clicks a score, we BFS from it and reveal Scorigamis 0–10 shots away
+let clickedScore = null;   // { win, lose } | null
+const MAX_REVEAL_DIST = 10;
+
+// Colour palette: index = distance (0 = scorigami itself, 1–10 = gradient)
+const REVEAL_COLOURS = [
+  '#FFD700',  // 0  — gold  (the cell itself IS a scorigami)
+  '#e53935',  // 1  — red
+  '#f4511e',  // 2  — deep orange
+  '#fb8c00',  // 3  — orange
+  '#fdd835',  // 4  — yellow
+  '#c0ca33',  // 5  — lime
+  '#43a047',  // 6  — green
+  '#00897b',  // 7  — teal
+  '#1e88e5',  // 8  — blue
+  '#5e35b1',  // 9  — deep purple
+  '#8e24aa',  // 10 — purple
+];
+
+// Camera
+let camX = 0, camY = 0, camZ = 1;
+let isDragging = false, dragStartX, dragStartY, dragCamX, dragCamY;
+
+const SCORE_MAX = 250; // AFL record is 239 (St Kilda 1979)
+
+// ── Startup ───────────────────────────────────────────────────────────────────
+function startApp() {
+  setLoading(20, 'Processing match data…');
+  setTimeout(() => {
+    processGames(EMBEDDED_GAMES);
+    setLoading(70, 'Building distance map…');
+    setTimeout(() => {
+      initUI();
+      rebuildAndRender();
+      setLoading(100, 'Ready');
+      document.getElementById('loadingOverlay').classList.add('fade-out');
+      setTimeout(() => {
+        const el = document.getElementById('loadingOverlay');
+        if (el) el.remove();
+      }, 500);
+    }, 20);
+  }, 20);
+}
+
+// ── processGames ─────────────────────────────────────────────────────────────
+function processGames(games) {
+  allGames = [];
+  const seasonSet = new Set();
+
+  games.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  for (const g of games) {
+    const win  = Math.max(g.homeScore, g.awayScore);
+    const lose = Math.min(g.homeScore, g.awayScore);
+    const season = g.season || parseInt((g.date || '1900').substring(0, 4));
+    seasonSet.add(season);
+    allGames.push({
+      season,
+      date:      g.date || `${season}-01-01`,
+      homeTeam:  g.homeTeam  || '?',
+      awayTeam:  g.awayTeam  || '?',
+      homeScore: g.homeScore,
+      awayScore: g.awayScore,
+      winScore:  win,
+      loseScore: lose
+    });
+  }
+
+  seasons = Array.from(seasonSet).sort((a, b) => a - b);
+
+  // Build globalSeenSet and seenBySeasonEnd
+  const seen = new Set();
+  const bySeasonMap = {};
+  for (const s of seasons) bySeasonMap[s] = new Set();
+
+  for (const g of allGames) {
+    const key = `${g.winScore}-${g.loseScore}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      if (bySeasonMap[g.season]) bySeasonMap[g.season].add(key);
+    }
+  }
+
+  const allSeen = new Set();
+  seenBySeasonEnd = {};
+  for (const s of seasons) {
+    for (const key of bySeasonMap[s]) allSeen.add(key);
+    seenBySeasonEnd[s] = new Set(allSeen);
+  }
+
+  globalSeenSet = new Set(allSeen);
+  activeSeenSet = globalSeenSet;
+
+  // Status bar
+  document.getElementById('statusDot').className = 'status-dot ready';
+  const genLabel = (typeof GENERATED_AT !== 'undefined')
+    ? `Data as of ${LATEST_DATE} · built ${GENERATED_AT}`
+    : `${allGames.length.toLocaleString()} games · ${seasons.length} seasons`;
+  document.getElementById('statusText').textContent = genLabel;
+}
+
+// ── initUI ────────────────────────────────────────────────────────────────────
+function initUI() {
+  // Season selector
+  const sel = document.getElementById('seasonSelect');
+  const latest = seasons[seasons.length - 1];
+  for (const s of [...seasons].reverse()) {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = `End of ${s} season`;
+    if (s === latest) opt.textContent += ' (latest)';
+    sel.appendChild(opt);
+  }
+
+  // Team selectors — sorted unique team names
+  const teamNames = Array.from(
+    new Set(allGames.flatMap(g => [g.homeTeam, g.awayTeam]))
+  ).sort();
+
+  for (const sel of ['teamA', 'teamB']) {
+    const el = document.getElementById(sel);
+    for (const t of teamNames) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = t;
+      el.appendChild(opt);
+    }
+  }
+  // Default teamB to second team so they differ
+  if (teamNames.length > 1) {
+    document.getElementById('teamB').selectedIndex = 1;
+  }
+
+  teamA = document.getElementById('teamA').value;
+  teamB = document.getElementById('teamB').value;
+
+  // Wire events
+  document.getElementById('seasonSelect').addEventListener('change', onSeasonChange);
+  document.getElementById('teamA').addEventListener('change', onTeamChange);
+  document.getElementById('teamB').addEventListener('change', onTeamChange);
+
+  // Build the colour legend for the click-reveal panel
+  buildRevealLegend();
+  updateRevealUI();
+}
+
+function setLoading(pct, msg) {
+  document.getElementById('loadingBar').style.width = pct + '%';
+  document.getElementById('loadingMsg').textContent = msg;
+}
+
+// ── Scope / season change handlers ───────────────────────────────────────────
+function setScope(s) {
+  scope = s;
+  ['all','one','two'].forEach(v =>
+    document.getElementById('btn' + v.charAt(0).toUpperCase() + v.slice(1))
+      .classList.toggle('active', v === s)
+  );
+  document.getElementById('teamASection').style.display = (s === 'one' || s === 'two') ? '' : 'none';
+  document.getElementById('teamBSection').style.display = (s === 'two') ? '' : 'none';
+  document.getElementById('teamALabel').textContent     = (s === 'two') ? 'Team A' : 'Team';
+  rebuildAndRender();
+}
+
+function onSeasonChange() {
+  currentSeason = document.getElementById('seasonSelect').value;
+  activeSeenSet = currentSeason === 'current'
+    ? globalSeenSet
+    : (seenBySeasonEnd[parseInt(currentSeason)] || new Set());
+  distCache.clear();
+  distCacheKey = '';
+  rebuildAndRender();
+}
+
+function onTeamChange() {
+  teamA = document.getElementById('teamA').value;
+  teamB = document.getElementById('teamB').value;
+  rebuildAndRender();
+}
+
+// ── Rebuild scope occurrence map and rerender ─────────────────────────────────
+function rebuildAndRender() {
+  // Filter games by scope
+  let filtered;
+  if (scope === 'all') {
+    filtered = allGames;
+  } else if (scope === 'one') {
+    filtered = allGames.filter(g => g.homeTeam === teamA || g.awayTeam === teamA);
+  } else {
+    // head-to-head: both teams must appear in the game
+    filtered = allGames.filter(g =>
+      (g.homeTeam === teamA && g.awayTeam === teamB) ||
+      (g.homeTeam === teamB && g.awayTeam === teamA)
+    );
+  }
+
+  scopeOccMap = new Map();
+  for (const g of filtered) {
+    const key = `${g.winScore}-${g.loseScore}`;
+    if (currentSeason !== 'current') {
+      const cutoff = parseInt(currentSeason);
+      if (g.season > cutoff) continue;
+    }
+    scopeOccMap.set(key, (scopeOccMap.get(key) || 0) + 1);
+  }
+
+  // Invalidate distance cache if seen set changed
+  const newCacheKey = currentSeason + '|' + activeSeenSet.size;
+  if (newCacheKey !== distCacheKey) {
+    distCache.clear();
+    distCacheKey = newCacheKey;
+  }
+
+  updateTitle();
+  updateStats();
+  renderPlot();
+  renderTimeline();
+}
+
+function updateTitle() {
+  const el = document.getElementById('plotTitle');
+  if (scope === 'all') {
+    el.textContent = 'All teams — click any score to reveal nearby Scorigamis';
+  } else if (scope === 'one') {
+    el.textContent = `${teamA} — click any score to reveal nearby Scorigamis`;
+  } else {
+    el.textContent = `${teamA} vs ${teamB} (head-to-head) — click any score to reveal nearby Scorigamis`;
+  }
+}
+
+// ── Click-reveal helpers ──────────────────────────────────────────────────────
+
+function setClickedScore(win, lose) {
+  clickedScore = { win, lose };
+  renderPlot();
+  updateRevealUI();
+  updateRevealCounts();
+}
+
+function clearClickedScore() {
+  clickedScore = null;
+  renderPlot();
+  updateRevealUI();
+  updateRevealCounts();
+}
+
+function updateRevealUI() {
+  const legendSec  = document.getElementById('revealLegendSection');
+  const howToSec   = document.getElementById('howToSection');
+  const blankHint  = document.getElementById('blankHint');
+  const pill       = document.getElementById('selectedScorePill');
+
+  if (clickedScore) {
+    legendSec.style.display = '';
+    howToSec.style.display  = 'none';
+    blankHint.style.display = 'none';
+
+    const key    = `${clickedScore.win}-${clickedScore.lose}`;
+    const isSeen = activeSeenSet.has(key);
+    pill.textContent = `${clickedScore.win} – ${clickedScore.lose}${isSeen ? '' : ' ✦ Scorigami!'}`;
+    pill.style.display = '';
+  } else {
+    legendSec.style.display = 'none';
+    howToSec.style.display  = '';
+    blankHint.style.display = '';
+    pill.style.display = 'none';
+  }
+}
+
+function buildRevealLegend() {
+  const container = document.getElementById('revealLegend');
+  container.innerHTML = '';
+  const labels = [
+    'Scorigami! (this score)',
+    '1 shot away', '2 shots away', '3 shots away', '4 shots away',
+    '5 shots away', '6 shots away', '7 shots away', '8 shots away',
+    '9 shots away', '10 shots away',
+  ];
+  REVEAL_COLOURS.forEach((colour, i) => {
+    const sw = document.createElement('div');
+    sw.className = 'reveal-swatch';
+    sw.innerHTML = `
+      <div class="reveal-dot" style="background:${colour}"></div>
+      <span class="reveal-swatch-label">${labels[i]}</span>
+      <span class="reveal-count" id="revealCount${i}">–</span>
+    `;
+    container.appendChild(sw);
+  });
+}
+
+function updateRevealCounts() {
+  // Reset all counts to dash when no score selected
+  if (!clickedScore) {
+    for (let i = 0; i <= MAX_REVEAL_DIST; i++) {
+      const el = document.getElementById(`revealCount${i}`);
+      if (el) { el.textContent = '–'; el.className = 'reveal-count'; }
+    }
+    return;
+  }
+
+  const revealMap = bfsReveal(clickedScore.win, clickedScore.lose, MAX_REVEAL_DIST);
+
+  // Tally counts per distance
+  const counts = new Array(MAX_REVEAL_DIST + 1).fill(0);
+  for (const dist of revealMap.values()) counts[dist]++;
+
+  for (let i = 0; i <= MAX_REVEAL_DIST; i++) {
+    const el = document.getElementById(`revealCount${i}`);
+    if (!el) continue;
+    el.textContent = counts[i].toLocaleString();
+    el.className   = counts[i] > 0 ? 'reveal-count has-count' : 'reveal-count';
+  }
+}
+
+function updateStats() {
+  const n = [...scopeOccMap.values()].reduce((a, b) => a + b, 0);
+  document.getElementById('statGames').textContent  = n.toLocaleString();
+  document.getElementById('statUnique').textContent = scopeOccMap.size.toLocaleString();
+
+  // Distance stats (only for played scores in scope)
+  let d1 = 0, d3 = 0;
+  for (const key of scopeOccMap.keys()) {
+    const [w, l] = key.split('-').map(Number);
+    const d = getDistance(w, l);
+    if (d === 1) d1++;
+    if (d <= 3)  d3++;
+  }
+  document.getElementById('statDist1').textContent = d1.toLocaleString();
+  document.getElementById('statDist3').textContent = d3.toLocaleString();
+}
+
+// ── BFS distance to nearest scorigami ────────────────────────────────────────
+// Returns the minimum number of scoring shots separating (win, lose) from the
+// nearest unseen scoreline, exploring in ALL directions (±1, ±6 to either
+// score, re-normalised so hi >= lo >= 0).
+// Returns 0 if (win, lose) is itself a scorigami (unseen).
+function getDistance(win, lose) {
+  const key = `${win}-${lose}`;
+
+  if (!activeSeenSet.has(key)) return 0;
+  if (distCache.has(key)) return distCache.get(key);
+
+  // BFS outward in all directions
+  const visited = new Set([key]);
+  let frontier = [[win, lose]];
+  let dist = 0;
+
+  while (frontier.length > 0) {
+    dist++;
+    const next = [];
+    for (const [hi, lo] of frontier) {
+      for (const delta of [1, 6]) {
+        for (const [a, b] of [
+          [hi + delta, lo],        // add to winning score
+          [hi,         lo + delta], // add to losing score
+        ]) {
+          const nHi = Math.max(a, b);
+          const nLo = Math.min(a, b);
+          if (nHi > SCORE_MAX || nLo < 0 || nHi < 0) continue;
+          const nKey = `${nHi}-${nLo}`;
+          if (visited.has(nKey)) continue;
+          visited.add(nKey);
+          if (!activeSeenSet.has(nKey)) {
+            distCache.set(key, dist);
+            return dist;
+          }
+          next.push([nHi, nLo]);
+        }
+      }
+    }
+    frontier = next;
+  }
+
+  distCache.set(key, 99);
+  return 99;
+}
+
+// renderScaleBar removed — replaced by click-reveal legend in sidebar
+
+// ── Canvas rendering ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('mainPlot');
+const ctx    = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const c = document.getElementById('plotContainer');
+  canvas.width  = c.clientWidth;
+  canvas.height = c.clientHeight;
+  renderPlot();
+}
+
+function scoreToCanvas(win, lose) {
+  const pad = 40;
+  const cW = (canvas.width  - pad * 2) / SCORE_MAX * camZ;
+  const cH = (canvas.height - pad * 2) / SCORE_MAX * camZ;
+  return {
+    x: pad + win  * cW + camX,
+    y: canvas.height - pad - lose * cH + camY,
+    cW, cH
+  };
+}
+
+function canvasToScore(cx, cy) {
+  const pad = 40;
+  const cW = (canvas.width  - pad * 2) / SCORE_MAX * camZ;
+  const cH = (canvas.height - pad * 2) / SCORE_MAX * camZ;
+  return {
+    win:  Math.round((cx - pad - camX) / cW),
+    lose: Math.round((canvas.height - pad - cy + camY) / cH)
+  };
+}
+
+function renderPlot() {
+  if (!ctx) return;
+
+  const pad = 40;
+  const W = canvas.width, H = canvas.height;
+  const { cW, cH } = scoreToCanvas(1, 1);
+
+  // ── Background ──────────────────────────────────────────────────────────
+  ctx.fillStyle = '#f8f9fa';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(pad, pad, W - pad * 2, H - pad * 2);
+
+  // ── Grid lines every 10 points ──────────────────────────────────────────
+  ctx.strokeStyle = '#e9ecef';
+  ctx.lineWidth = 0.5;
+  for (let s = 0; s <= SCORE_MAX; s += 10) {
+    const { x } = scoreToCanvas(s, 0);
+    const { y } = scoreToCanvas(0, s);
+    if (x >= pad && x <= W - pad) {
+      ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H - pad); ctx.stroke();
+    }
+    if (y >= pad && y <= H - pad) {
+      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+    }
+  }
+
+  // ── Diagonal boundary (win = lose line) ────────────────────────────────
+  ctx.strokeStyle = '#dee2e6'; ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  const d0 = scoreToCanvas(0, 0), d1 = scoreToCanvas(SCORE_MAX, SCORE_MAX);
+  ctx.beginPath(); ctx.moveTo(d0.x, d0.y); ctx.lineTo(d1.x, d1.y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── Clip to plot area for cell drawing ─────────────────────────────────
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad, pad, W - pad * 2, H - pad * 2);
+  ctx.clip();
+
+  if (clickedScore !== null) {
+    // ── BFS from clicked score — reveal Scorigamis 0..MAX_REVEAL_DIST away ──
+    const { win: cWin, lose: cLose } = clickedScore;
+    const revealMap = bfsReveal(cWin, cLose, MAX_REVEAL_DIST);
+
+    for (const [key, dist] of revealMap) {
+      const [w, l]    = key.split('-').map(Number);
+      const { x, y }  = scoreToCanvas(w, l);
+      const cellW2    = Math.max(1, cW - 1);
+      const cellH2    = Math.max(1, cH - 1);
+      const rx        = x - cellW2 / 2;
+      const ry        = y - cellH2 / 2;
+
+      ctx.fillStyle   = REVEAL_COLOURS[dist];
+      ctx.globalAlpha = 0.88;
+      if (cW < 3) {
+        ctx.fillRect(rx, ry, cellW2, cellH2);
+      } else {
+        ctx.beginPath();
+        ctx.roundRect(rx, ry, cellW2, cellH2, Math.min(3, cW * 0.18));
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ── Draw the clicked score itself with a marker ring ──────────────────
+    const { x: cx, y: cy } = scoreToCanvas(cWin, cLose);
+    const hw = Math.max(1, cW - 1), hh = Math.max(1, cH - 1);
+    const hrx = cx - hw / 2, hry = cy - hh / 2;
+
+    // Fill — white semi-transparent so grid shows through
+    ctx.fillStyle   = 'rgba(255,255,255,0.75)';
+    ctx.globalAlpha = 1;
+    if (cW < 3) {
+      ctx.fillRect(hrx, hry, hw, hh);
+    } else {
+      ctx.beginPath();
+      ctx.roundRect(hrx, hry, hw, hh, Math.min(3, cW * 0.18));
+      ctx.fill();
+    }
+    // Bold navy border ring
+    ctx.strokeStyle = '#003087';
+    ctx.lineWidth   = Math.max(1.5, Math.min(3, cW * 0.22));
+    if (cW < 3) {
+      ctx.strokeRect(hrx, hry, hw, hh);
+    } else {
+      ctx.beginPath();
+      ctx.roundRect(hrx + 0.5, hry + 0.5, hw - 1, hh - 1, Math.min(3, cW * 0.18));
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+
+  // ── Border around plot area ─────────────────────────────────────────────
+  ctx.strokeStyle = '#dee2e6';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
+
+  // ── Axis tick labels ────────────────────────────────────────────────────
+  ctx.fillStyle = '#adb5bd';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  for (let s = 0; s <= SCORE_MAX; s += 20) {
+    const { x } = scoreToCanvas(s, 0);
+    const { y } = scoreToCanvas(0, s);
+    if (x > pad && x < W - pad + 5)
+      ctx.fillText(s, x, H - pad + 14);
+    if (y > pad - 5 && y < H - pad) {
+      ctx.textAlign = 'right';
+      ctx.fillText(s, pad - 5, y + 4);
+      ctx.textAlign = 'center';
+    }
+  }
+
+  // ── Blank-hint overlay visibility ───────────────────────────────────────
+  const bh = document.getElementById('blankHint');
+  if (bh) bh.style.display = clickedScore ? 'none' : '';
+}
+
+// ── BFS from a starting score, returning a Map of "win-lose" → distance ───────
+// Only unseen (Scorigami) cells are included in the output.
+// The starting cell is included at distance 0 if it is itself a Scorigami.
+// Explored cells stop expanding once dist > maxDist.
+function bfsReveal(startWin, startLose, maxDist) {
+  const result   = new Map();
+  const visited  = new Set();
+  const startKey = `${startWin}-${startLose}`;
+
+  // If the start cell is itself a scorigami, record it at dist 0
+  if (!activeSeenSet.has(startKey)) {
+    result.set(startKey, 0);
+  }
+
+  visited.add(startKey);
+  let frontier = [[startWin, startLose]];
+
+  for (let dist = 1; dist <= maxDist; dist++) {
+    const next = [];
+    for (const [hi, lo] of frontier) {
+      for (const delta of [1, 6]) {
+        for (const [a, b] of [
+          [hi + delta, lo],   // add scoring shot to winning team
+          [hi,         lo + delta],  // add scoring shot to losing team
+        ]) {
+          const nHi = Math.max(a, b);
+          const nLo = Math.min(a, b);
+          if (nHi > SCORE_MAX || nLo < 0 || nHi < nLo) continue;
+          const nKey = `${nHi}-${nLo}`;
+          if (visited.has(nKey)) continue;
+          visited.add(nKey);
+          // Only include unseen cells (Scorigamis) in the output
+          if (!activeSeenSet.has(nKey)) {
+            result.set(nKey, dist);
+          } else {
+            // Seen cell — keep expanding through it
+            next.push([nHi, nLo]);
+          }
+        }
+      }
+    }
+    frontier = next;
+    if (frontier.length === 0) break;
+  }
+
+  return result;
+}
+
+// ── Timeline ──────────────────────────────────────────────────────────────────
+function renderTimeline() {
+  const tlCanvas = document.getElementById('timelinePlot');
+  const tc       = tlCanvas.getContext('2d');
+  tlCanvas.width  = tlCanvas.parentElement.clientWidth;
+  tlCanvas.height = 110;
+
+  tc.fillStyle = '#fff';
+  tc.fillRect(0, 0, tlCanvas.width, tlCanvas.height);
+
+  if (seasons.length === 0) return;
+
+  // For each season, compute mean distance of scorelines first-seen that season
+  // using the GLOBAL seen set (not scope-filtered) for distance calculation,
+  // but only counting scorelines that appear in the current scope.
+  const padL = 44, padR = 12, padT = 8, padB = 22;
+  const W = tlCanvas.width - padL - padR;
+  const H = tlCanvas.height - padT - padB;
+
+  // Build per-season mean distance data
+  // For each season, get the scorelines seen in scope during that season
+  const data = [];
+  for (const s of seasons) {
+    let filtered;
+    if (scope === 'all') {
+      filtered = allGames.filter(g => g.season === s);
+    } else if (scope === 'one') {
+      filtered = allGames.filter(g => g.season === s && (g.homeTeam === teamA || g.awayTeam === teamA));
+    } else {
+      filtered = allGames.filter(g => g.season === s &&
+        ((g.homeTeam === teamA && g.awayTeam === teamB) ||
+         (g.homeTeam === teamB && g.awayTeam === teamA)));
+    }
+
+    if (filtered.length === 0) { data.push({ season: s, mean: null }); continue; }
+
+    const seasonSeen = seenBySeasonEnd[s] || new Set();
+    // Temporarily use this season's seen set for distance
+    const savedActive = activeSeenSet;
+    activeSeenSet = seasonSeen;
+    distCache.clear();
+
+    let total = 0, count = 0;
+    const uniqKeys = new Set(filtered.map(g => `${g.winScore}-${g.loseScore}`));
+    for (const key of uniqKeys) {
+      const [w, l] = key.split('-').map(Number);
+      const d = getDistance(w, l);
+      if (d > 0) { total += d; count++; }
+    }
+
+    activeSeenSet = savedActive;
+    distCache.clear(); // restore
+    distCacheKey = ''; // force recompute on next render
+
+    data.push({ season: s, mean: count > 0 ? total / count : null });
+  }
+
+  // Restore distance cache key
+  distCacheKey = currentSeason + '|' + activeSeenSet.size;
+
+  const vals  = data.map(d => d.mean).filter(v => v !== null);
+  if (vals.length === 0) return;
+  const maxV  = Math.max(...vals);
+  const minV  = Math.min(...vals);
+  const range = maxV - minV || 1;
+  const n     = seasons.length;
+  const barW  = Math.max(1, W / n - 0.5);
+
+  // Draw bars
+  for (let i = 0; i < n; i++) {
+    const { season, mean } = data[i];
+    if (mean === null) continue;
+    const x = padL + (i / n) * W;
+    const h = ((mean - minV) / range) * H * 0.85;
+    const y = padT + H - h;
+    const isCurr = currentSeason !== 'current' && parseInt(currentSeason) === season;
+    tc.fillStyle = isCurr ? 'rgba(0,48,135,0.7)' : 'rgba(0,48,135,0.18)';
+    tc.fillRect(x, y, Math.max(1, barW), h);
+  }
+
+  // Trend line (3-season rolling mean)
+  tc.beginPath();
+  tc.strokeStyle = '#c0392b';
+  tc.lineWidth   = 1.5;
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    const window = data.slice(Math.max(0, i-1), Math.min(n, i+2))
+                       .map(d => d.mean).filter(v => v !== null);
+    if (window.length === 0) continue;
+    const avg = window.reduce((a,b)=>a+b,0) / window.length;
+    const x   = padL + (i / n) * W + barW / 2;
+    const y   = padT + H - ((avg - minV) / range) * H * 0.85;
+    if (!started) { tc.moveTo(x, y); started = true; } else tc.lineTo(x, y);
+  }
+  tc.stroke();
+
+  // Axis labels
+  tc.fillStyle   = '#adb5bd';
+  tc.font        = '9px -apple-system, sans-serif';
+  tc.textAlign   = 'center';
+  const step = Math.ceil(n / 14);
+  for (let i = 0; i < n; i += step) {
+    tc.fillText(seasons[i], padL + (i / n) * W + barW / 2, tlCanvas.height - 5);
+  }
+  tc.textAlign = 'right';
+  tc.fillText(maxV.toFixed(1), padL - 4, padT + 10);
+  tc.fillText(minV.toFixed(1), padL - 4, padT + H + 2);
+
+  // Legend
+  tc.textAlign   = 'left';
+  tc.fillStyle   = '#c0392b';
+  tc.fillText('— 3-season trend', padL + W - 110, padT + 10);
+  tc.fillStyle   = 'rgba(0,48,135,0.4)';
+  tc.fillRect(padL + W - 110, padT + 15, 8, 8);
+  tc.fillStyle   = '#adb5bd';
+  tc.fillText(' mean dist/season', padL + W - 100, padT + 23);
+}
+
+// ── Interaction ───────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  isDragging = false;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragCamX = camX; dragCamY = camY;
+  canvas.addEventListener('mousemove', onDragMove);
+  canvas.addEventListener('mouseup',   onDragEnd);
+});
+
+function onDragMove(e) {
+  const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDragging = true;
+  if (isDragging) { camX = dragCamX + dx; camY = dragCamY + dy; renderPlot(); }
+}
+
+function onDragEnd(e) {
+  canvas.removeEventListener('mousemove', onDragMove);
+  canvas.removeEventListener('mouseup',   onDragEnd);
+
+  if (!isDragging) {
+    // Click — set the clicked score (any valid cell, played or not)
+    const rect = canvas.getBoundingClientRect();
+    const { win, lose } = canvasToScore(e.clientX - rect.left, e.clientY - rect.top);
+    if (win >= 0 && lose >= 0 && win <= SCORE_MAX && lose <= win) {
+      // Toggle off if clicking the same score again
+      if (clickedScore && clickedScore.win === win && clickedScore.lose === lose) {
+        clearClickedScore();
+      } else {
+        setClickedScore(win, lose);
+      }
+    }
+  }
+}
+
+// Hover tooltip
+canvas.addEventListener('mousemove', e => {
+  if (isDragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const { win, lose } = canvasToScore(e.clientX - rect.left, e.clientY - rect.top);
+
+  const tt = document.getElementById('tooltip');
+  if (win < 0 || lose < 0 || win > SCORE_MAX || lose > win) {
+    tt.style.display = 'none';
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
+
+  canvas.style.cursor = 'pointer';
+
+  tt.style.display = 'block';
+  tt.style.left    = (e.clientX + 14) + 'px';
+  tt.style.top     = (e.clientY - 10) + 'px';
+
+  const key    = `${win}-${lose}`;
+  const isSeen = activeSeenSet.has(key);
+  const occ    = scopeOccMap.get(key);
+
+  // Is this score in the current reveal map?
+  let revealDist = null;
+  if (clickedScore) {
+    const revealMap = bfsReveal(clickedScore.win, clickedScore.lose, MAX_REVEAL_DIST);
+    if (revealMap.has(key)) revealDist = revealMap.get(key);
+  }
+
+  const isClickedCell = clickedScore && clickedScore.win === win && clickedScore.lose === lose;
+
+  if (isClickedCell) {
+    tt.innerHTML = `
+      <div class="tt-score">${win} – ${lose}</div>
+      <div style="color:#003087;font-weight:700;margin-bottom:3px">📍 Selected score</div>
+      ${occ ? `<div class="tt-label">Played</div>
+      <div class="tt-val">${occ.toLocaleString()} time${occ !== 1 ? 's' : ''} (in scope)</div>` : ''}
+      <div class="tt-val" style="color:#888;margin-top:4px;font-size:0.9em">Click again to deselect</div>
+    `;
+  } else if (!isSeen) {
+    const distStr = revealDist !== null
+      ? `<div class="tt-label" style="margin-top:4px">Distance from selection</div>
+         <div class="tt-val" style="font-weight:700;color:${REVEAL_COLOURS[revealDist]}">${revealDist} shot${revealDist !== 1 ? 's' : ''}</div>`
+      : '';
+    tt.innerHTML = `
+      <div class="tt-score">${win} – ${lose}</div>
+      <div style="color:#27ae60;font-weight:700;margin-bottom:3px">✦ Scorigami — never played</div>
+      ${distStr}
+      <div class="tt-val" style="color:#888;margin-top:4px;font-size:0.9em">Click to select this score</div>
+    `;
+  } else if (occ) {
+    const d = getDistance(win, lose);
+    const distStr = revealDist !== null
+      ? `<div class="tt-label" style="margin-top:4px">Distance from selection</div>
+         <div class="tt-val" style="font-weight:700;color:${REVEAL_COLOURS[revealDist]}">${revealDist} shot${revealDist !== 1 ? 's' : ''}</div>`
+      : `<div class="tt-label" style="margin-top:4px">Distance to nearest Scorigami</div>
+         <div class="tt-val">${d} shot${d !== 1 ? 's' : ''}</div>`;
+    tt.innerHTML = `
+      <div class="tt-score">${win} – ${lose}</div>
+      <div class="tt-label">Played</div>
+      <div class="tt-val">${occ.toLocaleString()} time${occ !== 1 ? 's' : ''} (in scope)</div>
+      ${distStr}
+      <div class="tt-val" style="color:#888;margin-top:4px;font-size:0.9em">Click to select this score</div>
+    `;
+  } else {
+    tt.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('tooltip').style.display = 'none';
+  canvas.style.cursor = 'crosshair';
+});
+
+// Scroll zoom
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.15 : 0.87;
+  const rect  = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const pad = 40;
+  const oldCW = (canvas.width  - pad * 2) / SCORE_MAX * camZ;
+  const oldCH = (canvas.height - pad * 2) / SCORE_MAX * camZ;
+  camZ = Math.max(0.3, Math.min(20, camZ * delta));
+  const newCW = (canvas.width  - pad * 2) / SCORE_MAX * camZ;
+  const newCH = (canvas.height - pad * 2) / SCORE_MAX * camZ;
+  camX = mx - (mx - camX) * (newCW / oldCW);
+  camY = my - (my - camY) * (newCH / oldCH);
+  renderPlot();
+}, { passive: false });
+
+function zoomIn()    { camZ = Math.min(20, camZ * 1.3);  renderPlot(); }
+function zoomOut()   { camZ = Math.max(0.3, camZ / 1.3); renderPlot(); }
+function resetView() { camX = 0; camY = 0; camZ = 1;     renderPlot(); }
+
+window.addEventListener('load', () => { resizeCanvas(); });
+
+// Debounced ResizeObserver — avoids "loop completed with undelivered notifications"
+let _resizeTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => { resizeCanvas(); renderTimeline(); }, 30);
+}).observe(document.getElementById('plotContainer'));
+
+document.addEventListener('DOMContentLoaded', () => { startApp(); });
+</script>
+</body>
+</html>
