@@ -688,10 +688,19 @@ function inRunningPredict(args) {
   const predTNoOffset = curTotal + t_a + t_b * pregameTotal + t_b_qtr * cqt;
   const expTotal = predTNoOffset + t_q500;
 
-  // ---- P(home wins) ----
+  // ---- P(home wins / draw / away wins) ----
+  // Treat margin ~ N(predNoOffset, m_sd) using the empirical residual SD.
+  // P(home wins)  = P(margin > 0.5)   = 1 - Phi(0.5; mu, sigma)
+  // P(draw)       = P(-0.5 <= margin < 0.5)
+  // P(away wins)  = P(margin < -0.5)
+  // The 0.5 cutoff reflects that the actual final margin is integer-valued.
   const sdSafe = Math.max(m_sd, 0.5);
-  let pHome = 1 - pnorm(0, predNoOffset, sdSafe);
+  let pHome = 1 - pnorm(0.5, predNoOffset, sdSafe);
+  let pAway = pnorm(-0.5, predNoOffset, sdSafe);
+  let pDraw = 1 - pHome - pAway;
   pHome = Math.max(0, Math.min(1, pHome));
+  pAway = Math.max(0, Math.min(1, pAway));
+  pDraw = Math.max(0, Math.min(1, pDraw));
 
   return {
     rem_frac: remFrac,
@@ -702,6 +711,8 @@ function inRunningPredict(args) {
     pregame_weight_t: t_b,
     cur_qtr_weight_t: t_b_qtr,
     p_home_wins: pHome,
+    p_draw: pDraw,
+    p_away_wins: pAway,
     expected_margin: expMargin,
     margin_50_lo: predNoOffset + m_q250, margin_50_hi: predNoOffset + m_q750,
     margin_90_lo: predNoOffset + m_q050, margin_90_hi: predNoOffset + m_q950,
@@ -919,14 +930,16 @@ function intervalBlock(expected, lo50, hi50, lo90, hi90, lo95, hi95) {
 }
 
 function probCard(p, lbl) {
-  const pct = +(100 * p.p_home_wins).toFixed(1);
-  const conf = `Forecast ${lbl}: ${fmt1(pct)}% home / ${fmt1(100 - pct)}% away`;
+  const pHome = +(100 * p.p_home_wins).toFixed(1);
+  const pDraw = +(100 * p.p_draw).toFixed(1);
+  const pAway = +(100 * p.p_away_wins).toFixed(1);
+  const conf = `${fmt1(pHome)}% home &middot; ${fmt1(pDraw)}% draw &middot; ${fmt1(pAway)}% away`;
   return `
     <div class="metric-card">
       <div class="label">Forecast ${lbl} - P(home wins)</div>
       <div class="prob-bar-wrap">
-        <div class="prob-bar-fill" style="width:${Math.max(0, Math.min(100, pct))}%;"></div>
-        <div class="prob-bar-text">${fmt1(pct)}%</div>
+        <div class="prob-bar-fill" style="width:${Math.max(0, Math.min(100, pHome))}%;"></div>
+        <div class="prob-bar-text">${fmt1(pHome)}%</div>
       </div>
       <div class="interval" style="margin-top:6px;">${conf}</div>
     </div>`;
