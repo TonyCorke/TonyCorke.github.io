@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFL In-Running Predictor</title>
+<style>
+/* ===========================================================================
+   AFL In-Running Predictor - standalone HTML version
+   Companion to InRunningModel.R / InRunningApp.R
+   =========================================================================== */
+
+:root {
+  --afl-blue: #003087;
+  --afl-blue-light: #4a7fc1;
+  --afl-blue-pale: #f0f4fa;
+  --afl-red: #E8211A;
+  --bg-page: #f8f9fa;
+  --bg-card: #ffffff;
+  --bg-soft: #fafafa;
+  --border-color: #e8e8e8;
+  --border-color-strong: #d8e0ed;
+  --text-default: #2c3e50;
+  --text-muted: #555;
+  --text-dim: #888;
+  --warning-bg: #fff7e6;
+  --warning-bd: #f5a623;
+  --warning-tx: #6e4c00;
+  --error-tx: #E8211A;
+  --font-stack: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "Menlo", "Consolas", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  font-family: var(--font-stack);
+  font-size: 14px; line-height: 1.5;
+  color: var(--text-default);
+  background: var(--bg-page);
+}
+
+main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+
+h1 {
+  margin: 0 0 14px 0;
+  font-size: 1.4em; font-weight: 600;
+  color: var(--afl-blue);
+  border-bottom: 2px solid var(--afl-blue);
+  padding-bottom: 8px;
+}
+h1 .subtitle {
+  font-size: 0.7em; font-weight: 400; color: var(--text-muted);
+  display: block; margin-top: 2px;
+}
+
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.card-header {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+  background: #fcfcfc;
+  border-radius: 6px 6px 0 0;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.card-body { padding: 14px; }
+
+/* Two-column layout for cards in a row */
+.card-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  margin-bottom: 14px;
+}
+.card-row .card { margin-bottom: 0; }
+
+/* Section headings */
+.subsection-head {
+  color: var(--afl-blue); font-weight: 700;
+  font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em;
+  margin: 0 0 6px 0; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ---- Input panel ---- */
+.input-panel {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
+}
+.col-clock   { flex: 0 0 auto; min-width: 160px; }
+.col-score   { flex: 0 0 auto; }
+.col-pregame { flex: 0 0 auto; }
+
+.form-group { margin-bottom: 6px; }
+.form-group > label {
+  display: block; font-size: 0.82em; font-weight: 500;
+  margin-bottom: 2px; color: var(--text-default);
+}
+input[type="text"], input[type="number"], select {
+  padding: 4px 8px; height: 32px; font-size: 0.92em;
+  border: 1px solid #ccc; border-radius: 4px;
+  background: white; color: var(--text-default);
+  font-family: inherit;
+  width: 100%;
+}
+input[type="text"]:focus, input[type="number"]:focus, select:focus {
+  border-color: var(--afl-blue); outline: 2px solid rgba(0,48,135,0.15);
+}
+
+/* Hide HTML5 number input spinners to save horizontal space */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+input[type='number'] { -moz-appearance: textfield; }
+
+/* Clock-column inputs */
+.col-clock select { width: 110px; }
+.col-clock .clock-input { width: 90px; }
+.col-clock .override-input { width: 110px; }
+
+/* Toggle switch */
+.toggle-row {
+  display: flex; align-items: center; gap: 8px; margin: 6px 0;
+  font-size: 0.85em; color: var(--text-muted);
+}
+.toggle-switch {
+  position: relative; display: inline-block;
+  width: 36px; height: 20px;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: #ccc; transition: 0.2s; border-radius: 20px;
+}
+.toggle-slider::before {
+  position: absolute; content: "";
+  height: 14px; width: 14px; left: 3px; bottom: 3px;
+  background: white; transition: 0.2s; border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--afl-blue); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+.forecast-line {
+  font-size: 0.78em; color: var(--text-muted); margin-top: 2px;
+  font-style: italic;
+}
+
+/* Score blocks */
+.score-block {
+  background: var(--bg-soft);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 230px; flex: 0 0 auto;
+}
+.score-block-title {
+  font-size: 0.78em; font-weight: 700; color: var(--afl-blue);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+.score-row { white-space: nowrap; margin-bottom: 4px; }
+.score-row > * { margin-right: 4px; }
+.score-row > *:last-child { margin-right: 0; }
+.score-row .row-label {
+  display: inline-block; width: 38px;
+  font-size: 0.76em; color: var(--text-muted); font-weight: 600;
+  vertical-align: bottom; padding-bottom: 6px; white-space: nowrap;
+}
+.score-row .form-group {
+  display: inline-block; width: 70px;
+  vertical-align: bottom; margin-bottom: 0;
+}
+.score-row .form-group > label {
+  font-size: 0.76em; margin-bottom: 1px; white-space: nowrap;
+}
+.score-row .form-group input { padding: 4px 6px; }
+
+.helper-text {
+  font-size: 0.78em; color: var(--text-muted);
+  line-height: 1.4; margin-top: 4px;
+}
+
+/* Pre-game forecasts */
+.pregame-grid { display: flex; gap: 8px; }
+.pregame-col {
+  border: 1px solid var(--border-color);
+  border-radius: 4px; padding: 8px 10px;
+  background: var(--bg-soft); flex: 0 0 auto;
+}
+.pg-title {
+  font-size: 0.78em; font-weight: 700; color: var(--afl-blue);
+  text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px;
+}
+.pregame-col input[type='number'] { width: 75px; }
+
+/* ---- Result panels ---- */
+.metric-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.metric-card .label {
+  font-size: 0.78em; color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;
+}
+.metric-card .value-big {
+  font-size: 1.7em; font-weight: 700; color: var(--afl-blue); line-height: 1.1;
+}
+.metric-card .interval {
+  font-size: 0.82em; color: var(--text-muted); margin-top: 4px; line-height: 1.5;
+}
+.metric-card .interval .lvl { display: inline-block; width: 32px; color: var(--text-dim); }
+.metric-card .interval .rng { font-family: var(--font-mono); }
+
+/* Top summary row */
+.summary-grid {
+  display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px;
+}
+
+/* Probability bar */
+.prob-bar-wrap {
+  position: relative; height: 32px; border-radius: 4px; overflow: hidden;
+  background: #e8e8e8; border: 1px solid #d0d0d0;
+}
+.prob-bar-fill {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  background: linear-gradient(90deg, var(--afl-blue), var(--afl-blue-light));
+  transition: width 0.25s ease;
+}
+.prob-bar-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 700; font-size: 0.95em;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* Side-by-side prediction columns */
+.pred-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.pred-col-header {
+  font-weight: 700; color: var(--afl-blue); font-size: 0.95em;
+  padding: 6px 10px; background: var(--afl-blue-pale);
+  border-radius: 4px 4px 0 0; border: 1px solid var(--border-color-strong);
+  border-bottom: none; text-align: center;
+}
+.pred-col-body {
+  border: 1px solid var(--border-color-strong); border-radius: 0 0 4px 4px;
+  padding: 12px; background: white;
+}
+
+/* Validation badge */
+.rem-frac-badge { font-size: 0.85em; color: var(--text-muted); }
+.rem-frac-badge.error { color: var(--error-tx); font-weight: 600; }
+
+/* Warnings */
+.qtr-warning {
+  background: var(--warning-bg);
+  border-left: 3px solid var(--warning-bd);
+  padding: 8px 12px; font-size: 0.82em; color: var(--warning-tx);
+  margin-top: 6px; border-radius: 0 4px 4px 0;
+}
+
+/* Weights and calibration grid */
+.weights-grid, .calib-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;
+}
+.calib-grid .full-row { grid-column: 1 / -1; }
+.kv-row { font-size: 0.92em; line-height: 1.6; }
+.kv-row .k { color: var(--text-dim); }
+.kv-row .v { font-weight: 700; }
+
+/* Footer */
+.app-footer {
+  font-size: 0.75em; color: var(--text-dim); text-align: center;
+  margin: 16px 0 8px 0;
+}
+.app-footer a { color: var(--afl-blue); text-decoration: none; }
+
+@media (max-width: 980px) {
+  .card-row { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .pred-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <h1>AFL In-Running Predictor
+    <span class="subtitle">Standalone HTML version &middot; Calibrated on 2012-2025 data (excl. 2020)</span>
+  </h1>
+
+  <!-- ===== INPUT PANEL ===== -->
+  <div class="card">
+    <div class="card-header">
+      <span>Match state and pre-game forecasts</span>
+      <span id="rem-frac-badge" class="rem-frac-badge"></span>
+    </div>
+    <div class="card-body">
+      <div class="input-panel">
+
+        <!-- Clock -->
+        <div class="col-clock">
+          <h6 class="subsection-head">Match clock</h6>
+          <div class="form-group">
+            <label for="period">Quarter</label>
+            <select id="period">
+              <option value="1">Q1</option>
+              <option value="2">Q2</option>
+              <option value="3">Q3</option>
+              <option value="4">Q4</option>
+            </select>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle-switch">
+              <input type="checkbox" id="count-down">
+              <span class="toggle-slider"></span>
+            </label>
+            <span>Count down (time remaining)</span>
+          </div>
+          <div class="form-group">
+            <label for="qtr-clock" id="qtr-clock-label">Time elapsed in quarter (MM:SS)</label>
+            <input type="text" id="qtr-clock" class="clock-input" value="0:00" placeholder="MM:SS">
+          </div>
+          <div class="form-group">
+            <label for="qtr-total-secs">Quarter length override (sec, optional)</label>
+            <input type="number" id="qtr-total-secs" class="override-input" min="0" step="30" placeholder="(blank = use forecast)">
+          </div>
+          <div class="forecast-line" id="qtr-length-forecast"></div>
+        </div>
+
+        <!-- Whole-game scores -->
+        <div class="col-score score-block">
+          <div class="score-block-title">Whole game so far</div>
+          <div class="score-row">
+            <span class="row-label">Home</span>
+            <div class="form-group">
+              <label for="home-goals">Goals</label>
+              <input type="number" id="home-goals" min="0" step="1" value="0">
+            </div>
+            <div class="form-group">
+              <label for="home-behinds">Behinds</label>
+              <input type="number" id="home-behinds" min="0" step="1" value="0">
+            </div>
+          </div>
+          <div class="score-row">
+            <span class="row-label">Away</span>
+            <div class="form-group">
+              <label for="away-goals">Goals</label>
+              <input type="number" id="away-goals" min="0" step="1" value="0">
+            </div>
+            <div class="form-group">
+              <label for="away-behinds">Behinds</label>
+              <input type="number" id="away-behinds" min="0" step="1" value="0">
+            </div>
+          </div>
+          <div class="helper-text" id="whole-game-score-text"></div>
+        </div>
+
+        <!-- Start-of-quarter scores -->
+        <div class="col-score score-block">
+          <div class="score-block-title">At start of current quarter</div>
+          <div class="score-row">
+            <span class="row-label">Home</span>
+            <div class="form-group">
+              <label for="home-goals-qstart">Goals</label>
+              <input type="number" id="home-goals-qstart" min="0" step="1" value="0">
+            </div>
+            <div class="form-group">
+              <label for="home-behinds-qstart">Behinds</label>
+              <input type="number" id="home-behinds-qstart" min="0" step="1" value="0">
+            </div>
+          </div>
+          <div class="score-row">
+            <span class="row-label">Away</span>
+            <div class="form-group">
+              <label for="away-goals-qstart">Goals</label>
+              <input type="number" id="away-goals-qstart" min="0" step="1" value="0">
+            </div>
+            <div class="form-group">
+              <label for="away-behinds-qstart">Behinds</label>
+              <input type="number" id="away-behinds-qstart" min="0" step="1" value="0">
+            </div>
+          </div>
+          <div class="helper-text" id="qtr-score-text"></div>
+        </div>
+
+        <!-- Pre-game forecasts -->
+        <div class="col-pregame">
+          <h6 class="subsection-head">Pre-game forecasts</h6>
+          <div class="pregame-grid">
+            <div class="pregame-col">
+              <div class="pg-title">Forecast A</div>
+              <div class="form-group">
+                <label for="pregame-margin-a">Margin (home)</label>
+                <input type="number" id="pregame-margin-a" step="1" value="0">
+              </div>
+              <div class="form-group">
+                <label for="pregame-total-a">Total</label>
+                <input type="number" id="pregame-total-a" min="0" step="1" value="175">
+              </div>
+            </div>
+            <div class="pregame-col">
+              <div class="pg-title">Forecast B</div>
+              <div class="form-group">
+                <label for="pregame-margin-b">Margin (home)</label>
+                <input type="number" id="pregame-margin-b" step="1" value="0">
+              </div>
+              <div class="form-group">
+                <label for="pregame-total-b">Total</label>
+                <input type="number" id="pregame-total-b" min="0" step="1" value="175">
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOP SUMMARY ===== -->
+  <div class="card">
+    <div class="card-header"><span>Live prediction summary</span></div>
+    <div class="card-body">
+      <div id="top-row"></div>
+    </div>
+  </div>
+
+  <!-- ===== MARGIN AND TOTAL ===== -->
+  <div class="card-row">
+    <div class="card">
+      <div class="card-header"><span>Final margin</span></div>
+      <div class="card-body" id="margin-card"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span>Final total</span></div>
+      <div class="card-body" id="total-card"></div>
+    </div>
+  </div>
+
+  <!-- ===== WEIGHTS AND CALIBRATION ===== -->
+  <div class="card-row">
+    <div class="card">
+      <div class="card-header"><span>Model blend</span></div>
+      <div class="card-body">
+        <div class="helper-text">Weights the model places on each input source at this rem_frac.</div>
+        <div id="weights-panel"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span>Out-of-sample calibration at this rem_frac</span></div>
+      <div class="card-body">
+        <div class="helper-text">Mean OOS performance across 2015-2025 hold-out years (excl. 2020).</div>
+        <div id="calib-panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-footer">
+    Calibration based on 2,879 men's V/AFL matches, 2012-2025 (excl. 2020).
+    Margin model: rem_margin ~ a(rf) + b(rf) * pregame_margin.
+    Total model: rem_total ~ a + b_pre * pregame_total + b_qtr * cur_qtr_total.
+  </div>
+</main>
+
+<script>
+/* ===========================================================================
+   Calibration tables (ported from InRunningModel.R)
+   =========================================================================== */
+
+const MARGIN_TAB = {
+  rem_frac: [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.86, 0.87, 0.88, 0.89, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1],
+  a: [-0.00065, -0.00065, -0.00065, -0.00065, -0.00065, -0.00065, 0.000927, 0.008362, 0.0087, 0.01133, 0.015844, 0.024482, 0.01394, 0.00641, 0.010291, -0.056523, -0.001384, 0.024277, -0.041115, -0.323465, -0.419983, -0.167237, -0.125079, -0.128739, -0.16111, -0.160369, -0.160369, -0.159356, -0.136631, -0.310318, -0.276003, -0.273087, -0.280079, -0.250165, -0.259374, -0.112409, -0.112409, -0.112409, -0.112409, -0.112409, -0.112409, -0.119454, -0.126301, -0.128341, -0.155569, -0.124347, -0.093191, -0.100864, -0.056865, 0.062865, 0.245337, 0.455693],
+  b_pre: [-0.000015, -0.000015, -0.000015, -0.000015, -0.000015, -0.000015, 0.00003, -0.000046, -0.00004, -0.000113, -0.000066, 0.000853, 0.00178, 0.002505, 0.004622, 0.007251, 0.01587, 0.035697, 0.083079, 0.139795, 0.198352, 0.233432, 0.2527, 0.260038, 0.261744, 0.262629, 0.262629, 0.262392, 0.276268, 0.460495, 0.523135, 0.523077, 0.523583, 0.535274, 0.699382, 0.749867, 0.749867, 0.749867, 0.749867, 0.749867, 0.749867, 0.749749, 0.749471, 0.749379, 0.749441, 0.752046, 0.756498, 0.763197, 0.783352, 0.830292, 0.914354, 0.988367],
+  sd_resid: [0.038375, 0.038375, 0.038375, 0.038375, 0.038375, 0.038375, 0.103342, 0.315247, 0.315821, 0.336086, 0.418426, 0.799725, 1.012811, 1.440935, 2.066209, 3.132969, 4.769703, 7.049155, 9.78965, 12.424554, 14.332861, 15.579656, 16.27912, 16.450283, 16.474084, 16.500236, 16.500236, 16.521716, 16.988246, 22.797992, 24.239149, 24.239695, 24.223079, 24.473555, 28.95794, 30.422013, 30.422013, 30.422013, 30.422013, 30.422013, 30.422013, 30.429525, 30.429228, 30.428507, 30.400878, 30.433557, 30.443359, 30.571892, 30.933064, 31.481695, 33.169452, 34.860488],
+  q025: [0.000011, 0.000011, 0.000011, 0.000011, 0.000011, 0.000011, -0.002682, -0.010323, -0.010436, -0.016191, -0.018697, -0.073877, -0.119646, -0.158967, -0.310153, -2.054133, -11.173762, -16.834586, -23.677702, -27.596808, -29.891132, -31.648076, -32.525488, -32.917082, -32.95755, -32.992514, -32.992514, -33.10584, -33.421901, -44.259418, -48.120242, -48.122935, -48.117874, -48.559603, -57.173365, -60.895176, -60.895176, -60.895176, -60.895176, -60.895176, -60.895176, -60.889776, -60.886823, -60.886071, -60.857978, -60.890579, -60.902844, -60.720192, -61.438309, -62.259165, -65.414565, -69.236254],
+  q050: [0.000134, 0.000134, 0.000134, 0.000134, 0.000134, 0.000134, -0.002399, -0.009943, -0.010099, -0.015249, -0.018144, -0.06574, -0.100784, -0.130217, -0.245183, -0.369267, -1.764362, -11.004092, -16.844341, -22.065462, -24.226066, -25.737275, -26.909676, -27.1306, -27.271429, -27.41755, -27.41755, -27.561918, -28.047576, -37.767825, -40.894951, -40.898427, -40.886571, -41.506101, -48.592209, -51.10962, -51.10962, -51.10962, -51.10962, -51.10962, -51.10962, -51.101788, -51.093077, -51.090419, -51.063606, -51.138502, -51.262452, -51.189573, -51.444233, -52.903734, -56.600722, -58.965467],
+  q250: [0.000485, 0.000485, 0.000485, 0.000485, 0.000485, 0.000485, -0.001574, -0.008865, -0.009145, -0.012567, -0.01657, -0.042596, -0.051802, -0.060031, -0.109671, -0.105563, -0.391074, -0.998801, -2.576558, -5.314658, -8.092226, -10.323369, -11.20668, -11.385431, -11.44053, -11.443306, -11.443306, -11.446629, -11.888846, -14.829401, -15.368245, -15.370977, -15.36324, -15.535354, -18.859482, -19.769067, -19.769067, -19.769067, -19.769067, -19.769067, -19.769067, -19.775685, -19.76665, -19.763886, -19.739713, -19.779532, -19.759612, -19.907536, -20.250579, -20.624662, -21.612679, -22.454548],
+  q500: [0.00073, 0.00073, 0.00073, 0.00073, 0.00073, 0.00073, -0.001091, -0.008117, -0.008483, -0.01072, -0.015486, -0.028975, -0.023311, -0.019524, -0.033894, 0.019273, -0.07965, -0.198412, -0.290574, -0.154806, -0.118657, 0.18934, 0.325799, 0.410445, 0.416388, 0.392836, 0.392836, 0.377396, 0.445866, 0.110072, 0.579215, 0.578606, 0.58578, 0.457141, 0.693766, 0.343194, 0.343194, 0.343194, 0.343194, 0.343194, 0.343194, 0.348165, 0.350101, 0.350517, 0.378836, 0.374319, 0.407726, 0.566859, 0.82336, 0.830561, 0.237113, -0.075662],
+  q750: [0.000965, 0.000965, 0.000965, 0.000965, 0.000965, 0.000965, -0.00059, -0.007394, -0.007842, -0.008927, -0.014432, -0.014933, 0.00615, 0.022228, 0.043979, 0.145412, 0.212617, 0.595977, 2.060331, 5.267114, 8.381371, 10.125216, 10.731632, 10.979657, 10.986274, 11.053039, 11.053039, 11.063788, 11.49061, 15.179514, 16.344537, 16.34206, 16.345248, 16.422753, 19.061518, 20.100827, 20.100827, 20.100827, 20.100827, 20.100827, 20.100827, 20.10756, 20.101, 20.10243, 20.112894, 19.952433, 19.92026, 19.645806, 19.765844, 20.43479, 21.289061, 22.616898],
+  q950: [0.001367, 0.001367, 0.001367, 0.001367, 0.001367, 0.001367, 0.000129, -0.006149, -0.006735, -0.005824, -0.012606, 0.005757, 0.04962, 0.084013, 0.162968, 0.366788, 3.449198, 12.320011, 17.894143, 21.644245, 24.051535, 25.348305, 26.47031, 26.7803, 26.844496, 26.896084, 26.896084, 26.946206, 27.763217, 38.169716, 39.983983, 39.980565, 39.991917, 40.321281, 46.98967, 49.389242, 49.389242, 49.389242, 49.389242, 49.389242, 49.389242, 49.39731, 49.406578, 49.40775, 49.282367, 49.396172, 49.281004, 49.814927, 50.7251, 51.114528, 55.342878, 57.413492],
+  q975: [0.001494, 0.001494, 0.001494, 0.001494, 0.001494, 0.001494, 0.000383, -0.005699, -0.006333, -0.004692, -0.011928, 0.013689, 0.066733, 0.111744, 0.236888, 0.670248, 11.965128, 18.771168, 23.566641, 26.737153, 29.136925, 30.174366, 30.947391, 31.480412, 31.51837, 31.520529, 31.520529, 31.518737, 32.343538, 46.01303, 47.091228, 47.087687, 47.10011, 47.720542, 58.266837, 61.293801, 61.293801, 61.293801, 61.293801, 61.293801, 61.293801, 61.300614, 61.306911, 61.30877, 61.106379, 61.310044, 61.278454, 61.595484, 62.437369, 64.243571, 65.722542, 68.570486],
+};
+
+const TOTAL_TAB = {
+  rem_frac: [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.86, 0.87, 0.88, 0.89, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1],
+  a: [0.119716, 0.119716, 0.119716, 0.119716, 0.119716, 0.119716, 0.100115, 0.177342, 0.305242, 0.336625, 0.488773, 1.238429, 1.89788, 1.804035, 1.31508, 4.001916, 7.157458, 6.699576, 11.965624, 8.343263, 2.539764, -0.136448, 4.009771, 2.187593, 4.148701, 3.999763, 3.999763, 4.137365, 9.610318, 9.626348, 9.857022, 9.937138, 10.642601, 12.531783, 8.85295, 15.181091, 15.181091, 15.181091, 15.181091, 15.181091, 15.181091, 15.489069, 15.356831, 15.546858, 16.778565, 18.676365, 18.982789, 23.623183, 28.737404, 31.020342, 30.919691, 30.062082],
+  b_pre: [-0.000624, -0.000624, -0.000624, -0.000624, -0.000624, -0.000624, -0.000491, -0.000886, -0.001577, -0.001717, -0.002549, -0.006677, -0.009915, -0.008231, -0.003766, -0.014425, -0.021164, 0.003794, 0.01126, 0.08791, 0.171206, 0.22353, 0.219339, 0.236688, 0.226771, 0.228735, 0.228735, 0.2283, 0.206912, 0.379662, 0.450005, 0.449631, 0.445895, 0.437574, 0.512875, 0.609764, 0.609764, 0.609764, 0.609764, 0.609764, 0.609764, 0.609589, 0.611785, 0.612593, 0.619173, 0.627124, 0.65615, 0.676869, 0.712552, 0.752857, 0.796237, 0.821951],
+  b_qtr: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.00323, 0.472353, 0.6344, 0.218164, 0.218164, 0.218164, 0.218164, 0.218164, 0.218164, 0.212214, 0.207019, 0.199742, 0.148541, 0.078983, -0.03547, -0.209975, -0.446528, -0.632146, -0.764213, 0],
+  sd_resid: [0.652479, 0.652479, 0.652479, 0.652479, 0.652479, 0.652479, 0.674908, 0.758155, 0.896832, 0.975228, 1.086287, 1.455905, 2.221418, 3.365206, 4.383986, 6.805441, 10.271538, 14.591994, 18.602093, 20.663418, 19.575653, 16.920466, 14.724893, 14.056886, 13.88124, 13.755187, 13.755187, 13.684306, 14.95886, 22.667022, 19.831865, 19.803702, 19.736524, 19.772725, 22.739943, 24.462289, 24.462289, 24.462289, 24.462289, 24.462289, 24.462289, 24.467947, 24.471549, 24.500182, 24.658543, 24.816355, 25.195439, 25.77588, 26.70657, 27.503689, 28.268547, 28.754222],
+  q025: [-0.024924, -0.024924, -0.024924, -0.024924, -0.024924, -0.024924, -0.025584, -0.04266, -0.065603, -0.075745, -0.101494, -0.224076, -0.390466, -0.552083, -0.74228, -1.807833, -3.934688, -7.441929, -14.159754, -25.13007, -34.600533, -39.39815, -37.351138, -25.218129, -24.39394, -24.039325, -24.039325, -24.038627, -25.602302, -44.818822, -36.800176, -36.618864, -36.371629, -36.801695, -43.356253, -46.165073, -46.165073, -46.165073, -46.165073, -46.165073, -46.165073, -46.239543, -46.275931, -46.30486, -46.838802, -47.383007, -47.516779, -48.342217, -51.168627, -52.110999, -54.215881, -56.33701],
+  q050: [-0.023414, -0.023414, -0.023414, -0.023414, -0.023414, -0.023414, -0.024397, -0.040472, -0.061709, -0.071506, -0.095201, -0.207359, -0.366059, -0.532062, -0.733119, -1.770057, -3.872912, -7.425233, -14.104585, -24.794629, -33.398895, -37.148014, -22.487966, -21.415111, -21.050041, -21.016785, -21.016785, -21.049891, -22.22049, -37.672656, -31.022203, -30.990262, -30.923489, -31.077301, -36.359575, -39.371406, -39.371406, -39.371406, -39.371406, -39.371406, -39.371406, -39.425705, -39.453968, -39.466782, -39.736414, -39.919272, -40.370543, -41.664917, -43.006939, -44.955184, -45.773118, -47.675804],
+  q250: [-0.017733, -0.017733, -0.017733, -0.017733, -0.017733, -0.017733, -0.01993, -0.032443, -0.047404, -0.055933, -0.072077, -0.146819, -0.276306, -0.457448, -0.6989, -1.636944, -3.676588, -7.369456, -13.920576, -22.966491, -10.292982, -8.352702, -9.11875, -9.484865, -9.585465, -9.701887, -9.701887, -9.68037, -10.231149, -16.329545, -13.901816, -13.912248, -13.860769, -13.862365, -15.50709, -16.663281, -16.663281, -16.663281, -16.663281, -16.663281, -16.663281, -16.644787, -16.627535, -16.686525, -16.705599, -16.750569, -16.916092, -17.55354, -18.4035, -18.599128, -19.367606, -19.529914],
+  q500: [-0.013209, -0.013209, -0.013209, -0.013209, -0.013209, -0.013209, -0.016373, -0.026006, -0.035953, -0.043433, -0.053513, -0.098137, -0.203903, -0.397068, -0.67071, -1.52557, -3.500242, -7.332177, -13.781562, 4.36728, 4.183445, 1.605381, 0.176927, -0.378156, -0.494202, -0.655747, -0.655747, -0.708455, -1.257226, 0.621295, -0.346917, -0.366111, -0.380807, -0.536472, -0.56145, -0.600849, -0.600849, -0.600849, -0.600849, -0.600849, -0.600849, -0.580836, -0.53187, -0.538464, -0.32047, -0.19133, -0.262561, -0.43167, 0.274785, 0.633395, -0.017127, 0.375558],
+  q750: [-0.007682, -0.007682, -0.007682, -0.007682, -0.007682, -0.007682, -0.01202, -0.018148, -0.021975, -0.028243, -0.03096, -0.039077, -0.115708, -0.321973, -0.636005, -1.38257, -3.245198, -7.280735, 17.103616, 17.227073, 14.241542, 10.929797, 9.437512, 8.973557, 8.814777, 8.710102, 8.710102, 8.647145, 8.734284, 15.903804, 13.187001, 13.167547, 13.142342, 13.218041, 15.643266, 17.149975, 17.149975, 17.149975, 17.149975, 17.149975, 17.149975, 17.1016, 17.08987, 17.109005, 17.064484, 17.059303, 16.723252, 16.447936, 17.105749, 18.084073, 18.617133, 19.106379],
+  q950: [0.000586, 0.000586, 0.000586, 0.000586, 0.000586, 0.000586, -0.005501, -0.006132, -0.000542, -0.004772, 0.003929, 0.05591, 0.029823, -0.19566, -0.574326, 13.259335, 28.251506, 32.706468, 34.075797, 30.529342, 26.779074, 24.433783, 23.873856, 24.027067, 23.959706, 24.199002, 24.199002, 24.143849, 26.919582, 35.799871, 34.073039, 34.051185, 33.955989, 33.781462, 38.012513, 40.17177, 40.17177, 40.17177, 40.17177, 40.17177, 40.17177, 40.241202, 40.17322, 40.272817, 40.491897, 40.90336, 41.846972, 43.773723, 44.37654, 44.842988, 46.758407, 47.367708],
+  q975: [0.003141, 0.003141, 0.003141, 0.003141, 0.003141, 0.003141, -0.003511, -0.002691, 0.005845, 0.002307, 0.014414, 0.081616, 0.074314, -0.151424, 9.299429, 27.353791, 34.390738, 38.647464, 39.063938, 35.031264, 30.636552, 29.642221, 29.065188, 29.474814, 29.369054, 29.60477, 29.60477, 29.544102, 33.754565, 42.522232, 40.650852, 40.634753, 40.535358, 40.167187, 46.127506, 49.465818, 49.465818, 49.465818, 49.465818, 49.465818, 49.465818, 49.471825, 49.441954, 49.461116, 50.221277, 50.527246, 51.269784, 51.645526, 51.963378, 53.790099, 56.281918, 56.269466],
+};
+
+const METRICS_TAB = {
+  rem_frac: [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.86, 0.87, 0.88, 0.89, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1],
+  n: [2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096, 2096],
+  m_mae: [0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.004, 0.019, 0.019, 0.025, 0.036, 0.079, 0.126, 0.188, 0.348, 0.703, 1.576, 3.199, 5.797, 8.626, 10.673, 12.083, 12.802, 12.956, 12.991, 13.018, 13.018, 13.037, 13.355, 17.681, 18.907, 18.91, 18.879, 19.147, 22.865, 23.936, 23.936, 23.936, 23.936, 23.936, 23.936, 23.949, 23.941, 23.937, 23.911, 23.938, 23.888, 23.971, 24.248, 24.687, 25.818, 27.182],
+  m_rmse: [0.044, 0.044, 0.044, 0.044, 0.044, 0.044, 0.044, 0.342, 0.343, 0.367, 0.464, 0.904, 1.127, 1.507, 2.136, 3.222, 4.898, 6.998, 9.699, 12.333, 14.144, 15.397, 16.068, 16.225, 16.254, 16.281, 16.281, 16.301, 16.716, 22.331, 23.852, 23.852, 23.831, 24.186, 28.832, 30.138, 30.138, 30.138, 30.138, 30.138, 30.138, 30.148, 30.147, 30.146, 30.108, 30.164, 30.13, 30.301, 30.643, 31.242, 32.758, 34.351],
+  m_bias: [0, 0, 0, 0, 0, 0, -0.004, -0.001, 0, 0, 0.001, 0.013, -0.001, 0.011, 0.018, 0.09, 0.167, 0.16, 0.105, 0.21, 0.345, 0.384, 0.515, 0.306, 0.284, 0.271, 0.271, 0.261, 0.276, 0.634, 0.225, 0.227, 0.216, 0.338, 0.736, 0.874, 0.874, 0.874, 0.874, 0.874, 0.874, 0.871, 0.872, 0.868, 0.896, 0.883, 0.865, 0.989, 1.036, 1.368, 1.077, 0.878],
+  m_50: [70.658, 70.658, 70.658, 70.658, 70.658, 70.658, 57.252, 57.252, 57.204, 57.252, 57.204, 57.204, 57.204, 57.252, 57.538, 58.015, 56.584, 55.964, 52.242, 51.956, 53.292, 52.958, 52.052, 52.338, 52.242, 52.195, 52.195, 52.099, 52.576, 51.861, 50.859, 50.859, 50.906, 50.429, 50.143, 50.239, 50.239, 50.239, 50.239, 50.239, 50.239, 50.191, 50.239, 50.239, 50.191, 49.952, 50.143, 50.525, 50.525, 50.239, 50.859, 52.576],
+  m_90: [95.802, 95.802, 95.802, 95.802, 95.802, 95.802, 94.418, 94.323, 94.275, 94.227, 94.179, 93.989, 93.845, 93.845, 93.702, 92.605, 89.074, 89.695, 89.552, 90.458, 90.935, 91.221, 91.317, 91.651, 91.603, 91.508, 91.508, 91.46, 91.221, 91.651, 91.317, 91.317, 91.317, 91.269, 90.267, 90.792, 90.792, 90.792, 90.792, 90.792, 90.792, 90.792, 90.792, 90.792, 90.744, 90.792, 90.697, 90.315, 90.363, 90.363, 90.41, 90.792],
+  m_95: [98.282, 98.282, 98.282, 98.282, 98.282, 98.282, 97.758, 97.71, 97.662, 97.662, 97.71, 97.424, 97.233, 97.233, 96.947, 94.8, 94.466, 94.561, 95.802, 94.943, 95.849, 95.372, 95.229, 95.372, 95.372, 95.372, 95.372, 95.277, 95.42, 95.992, 96.04, 96.04, 96.04, 95.754, 95.42, 96.04, 96.04, 96.04, 96.04, 96.04, 96.04, 96.04, 96.04, 96.04, 96.04, 95.992, 95.992, 95.802, 96.04, 95.706, 96.231, 96.088],
+  t_mae: [0.042, 0.042, 0.042, 0.042, 0.042, 0.042, 0.049, 0.072, 0.084, 0.108, 0.143, 0.248, 0.458, 0.784, 1.329, 2.894, 6.253, 11.348, 16.675, 18.146, 15.494, 12.746, 11.349, 11.057, 10.978, 10.932, 10.932, 10.882, 11.797, 18.054, 15.653, 15.632, 15.554, 15.655, 18.032, 19.272, 19.272, 19.272, 19.272, 19.272, 19.272, 19.27, 19.271, 19.3, 19.397, 19.512, 19.691, 20.122, 20.838, 21.444, 22.213, 22.613],
+  t_rmse: [0.744, 0.744, 0.744, 0.744, 0.744, 0.744, 0.744, 0.841, 1.002, 1.093, 1.223, 1.647, 2.394, 3.455, 4.352, 6.867, 10.44, 14.319, 18.277, 20.26, 19.208, 16.785, 14.616, 13.988, 13.795, 13.681, 13.681, 13.592, 14.951, 22.279, 19.469, 19.432, 19.343, 19.434, 22.523, 23.873, 23.873, 23.873, 23.873, 23.873, 23.873, 23.88, 23.885, 23.922, 24.087, 24.279, 24.613, 25.203, 26.119, 27.009, 27.818, 28.328],
+  t_bias: [-0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.017, -0.016, -0.004, -0.009, -0.021, -0.021, -0.029, -0.006, -0.08, -0.009, 0.197, -0.141, -0.319, -0.145, -0.448, -0.902, -0.904, -0.804, -0.706, -0.687, -0.687, -0.676, -0.514, -0.712, -0.793, -0.78, -0.747, -0.624, -0.768, -0.576, -0.576, -0.576, -0.576, -0.576, -0.576, -0.573, -0.553, -0.533, -0.575, -0.542, -0.437, -0.223, -0.419, -0.379, -0.5, -0.317],
+  t_50: [59.351, 59.351, 59.351, 59.351, 59.351, 59.351, 43.941, 43.798, 43.798, 43.75, 43.655, 43.607, 43.416, 43.798, 43.177, 41.126, 36.88, 43.941, 53.626, 65.363, 54.198, 49.761, 48.998, 49.332, 49.38, 49.38, 49.38, 49.523, 49.523, 52.29, 51.908, 51.956, 52.052, 51.24, 51.527, 51.813, 51.813, 51.813, 51.813, 51.813, 51.813, 51.718, 51.718, 51.765, 51.622, 51.527, 50.906, 50.716, 51.145, 50.477, 50.62, 50.954],
+  t_90: [89.122, 89.122, 89.122, 89.122, 89.122, 89.122, 86.116, 86.069, 86.021, 85.973, 85.926, 85.639, 85.21, 85.687, 83.826, 81.87, 81.441, 91.078, 89.838, 94.466, 94.132, 93.368, 90.553, 90.172, 90.172, 90.219, 90.219, 90.267, 89.647, 91.126, 90.935, 90.983, 91.126, 90.983, 91.317, 92.176, 92.176, 92.176, 92.176, 92.176, 92.176, 92.176, 92.128, 92.08, 92.08, 91.937, 92.08, 91.794, 91.651, 91.412, 90.649, 90.744],
+  t_95: [93.607, 93.607, 93.607, 93.607, 93.607, 93.607, 91.937, 91.889, 91.842, 91.794, 91.746, 91.555, 91.078, 91.651, 90.076, 89.408, 89.742, 95.849, 94.704, 97.137, 97.376, 97.137, 94.847, 95.277, 95.563, 95.324, 95.324, 95.42, 95.324, 95.611, 95.897, 95.945, 96.04, 95.802, 95.706, 96.565, 96.565, 96.565, 96.565, 96.565, 96.565, 96.565, 96.565, 96.517, 96.279, 96.135, 96.088, 96.088, 95.897, 95.754, 96.04, 95.849],
+  brier: [0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.003, 0.003, 0.005, 0.007, 0.012, 0.022, 0.035, 0.047, 0.063, 0.077, 0.087, 0.095, 0.096, 0.096, 0.096, 0.096, 0.096, 0.098, 0.129, 0.137, 0.137, 0.137, 0.139, 0.167, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.176, 0.175, 0.177, 0.178, 0.182, 0.189, 0.199],
+  log_loss: [0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.015, 0.017, 0.034, 0.045, 0.063, 0.109, 0.137, 0.165, 0.21, 0.25, 0.276, 0.296, 0.3, 0.3, 0.301, 0.301, 0.301, 0.306, 0.398, 0.42, 0.421, 0.421, 0.425, 0.5, 0.521, 0.521, 0.521, 0.521, 0.521, 0.521, 0.521, 0.521, 0.521, 0.521, 0.522, 0.52, 0.523, 0.528, 0.538, 0.556, 0.58],
+  acc: [100, 100, 100, 100, 100, 100, 99.189, 99.189, 99.189, 99.189, 99.189, 99.189, 99.284, 99.571, 99.571, 99.38, 98.521, 97.09, 94.752, 91.889, 89.79, 87.834, 86.546, 86.355, 86.307, 86.26, 86.26, 86.26, 86.26, 81.918, 80.153, 80.153, 80.153, 80.153, 75.286, 73.282, 73.282, 73.282, 73.282, 73.282, 73.282, 73.187, 73.139, 73.139, 73.187, 73.092, 73.282, 73.092, 72.662, 71.994, 70.945, 68.607],
+};
+
+// Default per-period regulation lengths (median observed, in seconds), used
+// only as fallback when no scoring data is supplied.
+const DEFAULT_QTR_SECS = [1820, 1835, 1850, 1835];
+
+// Quarter-length forecasting model coefficients (linear fit on 2,711-2,716
+// observations per quarter, 2012-2025 excl 2020).
+// secs ~ a + b_goals * goals + b_behinds * behinds
+const QTR_LEN_COEFS = [
+  { a: 1577.79, b_goals: 38.290, b_behinds: 3.200 },
+  { a: 1584.07, b_goals: 38.410, b_behinds: 4.180 },
+  { a: 1603.28, b_goals: 37.340, b_behinds: 2.670 },
+  { a: 1601.07, b_goals: 35.650, b_behinds: 3.400 }
+];
+const QTR_MEAN_GOALS   = [6.110, 6.080, 6.390, 6.300];
+const QTR_MEAN_BEHINDS = [5.520, 5.470, 5.590, 5.570];
+
+/* ===========================================================================
+   Helper functions
+   =========================================================================== */
+
+// Linear interpolation. Returns the y-value at xout, given monotonic x and y arrays.
+// Replicates R's approx(rule = 2) behaviour: clamp to endpoints outside range.
+function interpAt(xout, xs, ys) {
+  if (xout <= xs[0]) return ys[0];
+  if (xout >= xs[xs.length - 1]) return ys[ys.length - 1];
+  // Binary search for the bracket
+  let lo = 0, hi = xs.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= xout) lo = mid; else hi = mid;
+  }
+  const t = (xout - xs[lo]) / (xs[hi] - xs[lo]);
+  return ys[lo] + t * (ys[hi] - ys[lo]);
+}
+
+function interpAtTab(rf, tab, col) {
+  return interpAt(rf, tab.rem_frac, tab[col]);
+}
+
+// Standard normal CDF using Abramowitz & Stegun 26.2.17 (max error 7.5e-8).
+function pnorm(x, mean = 0, sd = 1) {
+  if (sd <= 0) return x >= mean ? 1 : 0;
+  const z = (x - mean) / sd;
+  // Polynomial approximation of standard normal CDF
+  const a1 =  0.254829592;
+  const a2 = -0.284496736;
+  const a3 =  1.421413741;
+  const a4 = -1.453152027;
+  const a5 =  1.061405429;
+  const p  =  0.3275911;
+  const sign = z < 0 ? -1 : 1;
+  const az = Math.abs(z) / Math.sqrt(2);
+  const t = 1 / (1 + p * az);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-az * az);
+  return 0.5 * (1 + sign * y);
+}
+
+// Convert (period, %_period_remaining) to rem_frac.
+// %_period_remaining is in [0, 100]: e.g. period=1 with 50% remaining gives
+// rem_frac = 1.0 - (1 - 0.5)/4 = 0.875 (one half-quarter through Q1).
+function inRunningRemFrac(period, pctPeriodRemaining) {
+  const p = parseInt(period, 10);
+  const pct = pctPeriodRemaining / 100;
+  return (5 - p - 1 + pct) / 4;
+}
+
+// Forecast a quarter's full length given current scoring & elapsed time.
+// Logic: blend observed scoring rate with league prior, weight on observation
+// = elapsed / nominal_full_length. Returns seconds.
+function forecastQtrLength(period, secsElapsed, qtrGoals, qtrBehinds) {
+  const p = parseInt(period, 10);
+  if (p < 1 || p > 4) return NaN;
+  const c = QTR_LEN_COEFS[p - 1];
+  const priorG = QTR_MEAN_GOALS[p - 1];
+  const priorB = QTR_MEAN_BEHINDS[p - 1];
+  const nominalFull = c.a + c.b_goals * priorG + c.b_behinds * priorB;
+  if (secsElapsed == null || isNaN(secsElapsed) || secsElapsed <= 0) {
+    return nominalFull;
+  }
+  const wObs = Math.min(1, secsElapsed / nominalFull);
+  const g = (qtrGoals == null || isNaN(qtrGoals)) ? 0 : qtrGoals;
+  const b = (qtrBehinds == null || isNaN(qtrBehinds)) ? 0 : qtrBehinds;
+  const obsRateG = wObs > 0.05 ? g / wObs : priorG;
+  const obsRateB = wObs > 0.05 ? b / wObs : priorB;
+  const fcstG = wObs * obsRateG + (1 - wObs) * priorG;
+  const fcstB = wObs * obsRateB + (1 - wObs) * priorB;
+  return c.a + c.b_goals * fcstG + c.b_behinds * fcstB;
+}
+
+function secsToMmss(s) {
+  if (s == null || isNaN(s)) return "--:--";
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function parseMmss(str) {
+  if (typeof str !== "string") return NaN;
+  const s = str.trim();
+  if (s === "") return 0;
+  const parts = s.split(":");
+  if (parts.length !== 2) return NaN;
+  const m = parseFloat(parts[0]);
+  const sec = parseFloat(parts[1]);
+  if (isNaN(m) || isNaN(sec) || m < 0 || sec < 0 || sec >= 60) return NaN;
+  return m * 60 + sec;
+}
+
+/* ===========================================================================
+   Core prediction function
+   =========================================================================== */
+
+// Returns object with all prediction outputs. Mirrors the R in_running_predict()
+// function, including the V2 totals model with cur_qtr_total covariate.
+function inRunningPredict(args) {
+  const {
+    remFrac, curHome, curAway,
+    pregameMargin, pregameTotal,
+    curQtrHome = null, curQtrAway = null
+  } = args;
+
+  if (remFrac < 0 || remFrac > 1) {
+    throw new Error("rem_frac must be in [0, 1]");
+  }
+
+  const curMargin = curHome - curAway;
+  const curTotal = curHome + curAway;
+  const curQtrTotal = (curQtrHome == null || curQtrAway == null)
+    ? null : (curQtrHome + curQtrAway);
+
+  // ---- Margin prediction ----
+  const m_a    = interpAtTab(remFrac, MARGIN_TAB, "a");
+  const m_b    = interpAtTab(remFrac, MARGIN_TAB, "b_pre");
+  const m_sd   = interpAtTab(remFrac, MARGIN_TAB, "sd_resid");
+  const m_q025 = interpAtTab(remFrac, MARGIN_TAB, "q025");
+  const m_q050 = interpAtTab(remFrac, MARGIN_TAB, "q050");
+  const m_q250 = interpAtTab(remFrac, MARGIN_TAB, "q250");
+  const m_q500 = interpAtTab(remFrac, MARGIN_TAB, "q500");
+  const m_q750 = interpAtTab(remFrac, MARGIN_TAB, "q750");
+  const m_q950 = interpAtTab(remFrac, MARGIN_TAB, "q950");
+  const m_q975 = interpAtTab(remFrac, MARGIN_TAB, "q975");
+
+  const predNoOffset = curMargin + m_a + m_b * pregameMargin;
+  const expMargin = predNoOffset + m_q500;
+
+  // ---- Totals prediction (V2) ----
+  const t_a     = interpAtTab(remFrac, TOTAL_TAB, "a");
+  const t_b     = interpAtTab(remFrac, TOTAL_TAB, "b_pre");
+  const t_b_qtr = interpAtTab(remFrac, TOTAL_TAB, "b_qtr");
+  const t_q025  = interpAtTab(remFrac, TOTAL_TAB, "q025");
+  const t_q050  = interpAtTab(remFrac, TOTAL_TAB, "q050");
+  const t_q250  = interpAtTab(remFrac, TOTAL_TAB, "q250");
+  const t_q500  = interpAtTab(remFrac, TOTAL_TAB, "q500");
+  const t_q750  = interpAtTab(remFrac, TOTAL_TAB, "q750");
+  const t_q950  = interpAtTab(remFrac, TOTAL_TAB, "q950");
+  const t_q975  = interpAtTab(remFrac, TOTAL_TAB, "q975");
+
+  const cqt = (curQtrTotal == null) ? 0 : curQtrTotal;
+  const predTNoOffset = curTotal + t_a + t_b * pregameTotal + t_b_qtr * cqt;
+  const expTotal = predTNoOffset + t_q500;
+
+  // ---- P(home wins) ----
+  const sdSafe = Math.max(m_sd, 0.5);
+  let pHome = 1 - pnorm(0, predNoOffset, sdSafe);
+  pHome = Math.max(0, Math.min(1, pHome));
+
+  return {
+    rem_frac: remFrac,
+    cur_home: curHome, cur_away: curAway,
+    cur_margin: curMargin, cur_total: curTotal,
+    cur_qtr_total: curQtrTotal,
+    pregame_weight_m: m_b,
+    pregame_weight_t: t_b,
+    cur_qtr_weight_t: t_b_qtr,
+    p_home_wins: pHome,
+    expected_margin: expMargin,
+    margin_50_lo: predNoOffset + m_q250, margin_50_hi: predNoOffset + m_q750,
+    margin_90_lo: predNoOffset + m_q050, margin_90_hi: predNoOffset + m_q950,
+    margin_95_lo: predNoOffset + m_q025, margin_95_hi: predNoOffset + m_q975,
+    expected_total: expTotal,
+    total_50_lo: predTNoOffset + t_q250, total_50_hi: predTNoOffset + t_q750,
+    total_90_lo: predTNoOffset + t_q050, total_90_hi: predTNoOffset + t_q950,
+    total_95_lo: predTNoOffset + t_q025, total_95_hi: predTNoOffset + t_q975
+  };
+}
+
+// Wrapper that handles real game inputs (period + clock + scores).
+function inRunningPredictEasy(args) {
+  const {
+    period, qtrSecsElapsed, qtrTotalSecs,
+    homeGoals, homeBehinds, awayGoals, awayBehinds,
+    homeQtrGoals, homeQtrBehinds, awayQtrGoals, awayQtrBehinds,
+    pregameMargin, pregameTotal
+  } = args;
+
+  const qtot = qtrTotalSecs > 0 ? qtrTotalSecs : DEFAULT_QTR_SECS[period - 1];
+  const elapsedClamped = Math.max(0, Math.min(qtot, qtrSecsElapsed));
+  const pctPeriodRemaining = 100 * (1 - elapsedClamped / qtot);
+  const remFrac = inRunningRemFrac(period, pctPeriodRemaining);
+
+  const curHome = 6 * homeGoals + homeBehinds;
+  const curAway = 6 * awayGoals + awayBehinds;
+  const curQtrHome = (homeQtrGoals != null && homeQtrBehinds != null)
+    ? 6 * homeQtrGoals + homeQtrBehinds : null;
+  const curQtrAway = (awayQtrGoals != null && awayQtrBehinds != null)
+    ? 6 * awayQtrGoals + awayQtrBehinds : null;
+
+  return inRunningPredict({
+    remFrac, curHome, curAway,
+    pregameMargin, pregameTotal,
+    curQtrHome, curQtrAway
+  });
+}
+
+// Returns OOS metrics at a given rem_frac (linearly interpolated).
+function inRunningMetricsAt(rf) {
+  const cols = ["m_mae","m_rmse","m_50","m_90","m_95",
+                "t_mae","t_rmse","t_50","t_90","t_95",
+                "brier","acc"];
+  const out = { rem_frac: rf };
+  cols.forEach(c => { out[c] = interpAtTab(rf, METRICS_TAB, c); });
+  return out;
+}
+
+/* ===========================================================================
+   UI wiring
+   =========================================================================== */
+
+const $ = id => document.getElementById(id);
+
+const inputs = {
+  period: $("period"),
+  countDown: $("count-down"),
+  qtrClock: $("qtr-clock"),
+  qtrTotalSecs: $("qtr-total-secs"),
+  homeGoals: $("home-goals"),
+  homeBehinds: $("home-behinds"),
+  awayGoals: $("away-goals"),
+  awayBehinds: $("away-behinds"),
+  homeGoalsQ: $("home-goals-qstart"),
+  homeBehindsQ: $("home-behinds-qstart"),
+  awayGoalsQ: $("away-goals-qstart"),
+  awayBehindsQ: $("away-behinds-qstart"),
+  pregameMarginA: $("pregame-margin-a"),
+  pregameTotalA: $("pregame-total-a"),
+  pregameMarginB: $("pregame-margin-b"),
+  pregameTotalB: $("pregame-total-b")
+};
+
+const outs = {
+  remFracBadge: $("rem-frac-badge"),
+  qtrClockLabel: $("qtr-clock-label"),
+  qtrLengthForecast: $("qtr-length-forecast"),
+  wholeGameScoreText: $("whole-game-score-text"),
+  qtrScoreText: $("qtr-score-text"),
+  topRow: $("top-row"),
+  marginCard: $("margin-card"),
+  totalCard: $("total-card"),
+  weightsPanel: $("weights-panel"),
+  calibPanel: $("calib-panel")
+};
+
+function num(el) {
+  const v = el.value;
+  if (v === "" || v == null) return NaN;
+  return parseFloat(v);
+}
+function intVal(el) {
+  const v = el.value;
+  if (v === "" || v == null) return NaN;
+  return parseInt(v, 10);
+}
+
+function getOverrideSecs() {
+  const v = num(inputs.qtrTotalSecs);
+  if (isNaN(v) || v <= 0) return null;
+  return v;
+}
+
+function getQtrScoring() {
+  const g  = intVal(inputs.homeGoals),  b  = intVal(inputs.homeBehinds);
+  const g2 = intVal(inputs.awayGoals),  b2 = intVal(inputs.awayBehinds);
+  const gs  = intVal(inputs.homeGoalsQ),  bs  = intVal(inputs.homeBehindsQ);
+  const gs2 = intVal(inputs.awayGoalsQ),  bs2 = intVal(inputs.awayBehindsQ);
+  const all = [g,b,g2,b2,gs,bs,gs2,bs2];
+  if (all.some(isNaN)) return null;
+  const hG = g - gs, hB = b - bs;
+  const aG = g2 - gs2, aB = b2 - bs2;
+  if (hG < 0 || hB < 0 || aG < 0 || aB < 0) return null;
+  return {
+    qtrGoals: hG + aG, qtrBehinds: hB + aB,
+    homeQtrGoals: hG, homeQtrBehinds: hB,
+    awayQtrGoals: aG, awayQtrBehinds: aB
+  };
+}
+
+function getQtrForecastSecs() {
+  const period = parseInt(inputs.period.value, 10);
+  if (period < 1 || period > 4) return NaN;
+  const qsc = getQtrScoring();
+  if (!qsc) return NaN;
+  const rawSecs = parseMmss(inputs.qtrClock.value);
+  if (isNaN(rawSecs)) return NaN;
+  const nominal = forecastQtrLength(period, null, null, null);
+  const elapsedForFcst = inputs.countDown.checked
+    ? Math.max(0, nominal - rawSecs) : rawSecs;
+  return forecastQtrLength(period, elapsedForFcst, qsc.qtrGoals, qsc.qtrBehinds);
+}
+
+function getEffectiveQtrTotal() {
+  const ov = getOverrideSecs();
+  if (ov != null) return ov;
+  const fcst = getQtrForecastSecs();
+  if (!isNaN(fcst)) return fcst;
+  return DEFAULT_QTR_SECS[parseInt(inputs.period.value, 10) - 1];
+}
+
+function getElapsedSecs() {
+  const raw = parseMmss(inputs.qtrClock.value);
+  if (isNaN(raw)) return NaN;
+  const qtot = getEffectiveQtrTotal();
+  if (inputs.countDown.checked) {
+    return Math.max(0, Math.min(qtot, qtot - raw));
+  }
+  return raw;
+}
+
+function inputsValid() {
+  const ids = ["homeGoals","homeBehinds","awayGoals","awayBehinds",
+               "homeGoalsQ","homeBehindsQ","awayGoalsQ","awayBehindsQ",
+               "pregameMarginA","pregameTotalA",
+               "pregameMarginB","pregameTotalB"];
+  for (const id of ids) {
+    const v = num(inputs[id]);
+    if (isNaN(v)) return false;
+  }
+  // Score-component non-negativity
+  const nonNeg = ["homeGoals","homeBehinds","awayGoals","awayBehinds",
+                  "homeGoalsQ","homeBehindsQ","awayGoalsQ","awayBehindsQ",
+                  "pregameTotalA","pregameTotalB"];
+  for (const id of nonNeg) {
+    if (num(inputs[id]) < 0) return false;
+  }
+  // Start-of-quarter <= whole-game (per component)
+  if (intVal(inputs.homeGoalsQ)   > intVal(inputs.homeGoals))   return false;
+  if (intVal(inputs.homeBehindsQ) > intVal(inputs.homeBehinds)) return false;
+  if (intVal(inputs.awayGoalsQ)   > intVal(inputs.awayGoals))   return false;
+  if (intVal(inputs.awayBehindsQ) > intVal(inputs.awayBehinds)) return false;
+  // Clock parseable
+  if (isNaN(parseMmss(inputs.qtrClock.value))) return false;
+  return true;
+}
+
+function predictFor(pregameMargin, pregameTotal) {
+  const period = parseInt(inputs.period.value, 10);
+  const elapsed = getElapsedSecs();
+  const qtot = getEffectiveQtrTotal();
+  return inRunningPredictEasy({
+    period,
+    qtrSecsElapsed: elapsed,
+    qtrTotalSecs: qtot,
+    homeGoals: intVal(inputs.homeGoals),
+    homeBehinds: intVal(inputs.homeBehinds),
+    awayGoals: intVal(inputs.awayGoals),
+    awayBehinds: intVal(inputs.awayBehinds),
+    homeQtrGoals: intVal(inputs.homeGoals) - intVal(inputs.homeGoalsQ),
+    homeQtrBehinds: intVal(inputs.homeBehinds) - intVal(inputs.homeBehindsQ),
+    awayQtrGoals: intVal(inputs.awayGoals) - intVal(inputs.awayGoalsQ),
+    awayQtrBehinds: intVal(inputs.awayBehinds) - intVal(inputs.awayBehindsQ),
+    pregameMargin, pregameTotal
+  });
+}
+
+/* ===========================================================================
+   Rendering
+   =========================================================================== */
+
+const fmt1 = x => x.toFixed(1);
+const fmt2 = x => x.toFixed(2);
+const fmt3 = x => x.toFixed(3);
+
+function intervalBlock(expected, lo50, hi50, lo90, hi90, lo95, hi95) {
+  return `
+    <div class="value-big">${fmt1(expected)}</div>
+    <div class="interval" style="margin-top:8px;">
+      <div><span class="lvl">50%</span><span class="rng">[${fmt1(lo50)}, ${fmt1(hi50)}]</span></div>
+      <div><span class="lvl">90%</span><span class="rng">[${fmt1(lo90)}, ${fmt1(hi90)}]</span></div>
+      <div><span class="lvl">95%</span><span class="rng">[${fmt1(lo95)}, ${fmt1(hi95)}]</span></div>
+    </div>`;
+}
+
+function probCard(p, lbl) {
+  const pct = +(100 * p.p_home_wins).toFixed(1);
+  const conf = `Forecast ${lbl}: ${fmt1(pct)}% home / ${fmt1(100 - pct)}% away`;
+  return `
+    <div class="metric-card">
+      <div class="label">Forecast ${lbl} - P(home wins)</div>
+      <div class="prob-bar-wrap">
+        <div class="prob-bar-fill" style="width:${Math.max(0, Math.min(100, pct))}%;"></div>
+        <div class="prob-bar-text">${fmt1(pct)}%</div>
+      </div>
+      <div class="interval" style="margin-top:6px;">${conf}</div>
+    </div>`;
+}
+
+function render() {
+  const valid = inputsValid();
+
+  // Update clock label
+  outs.qtrClockLabel.textContent = inputs.countDown.checked
+    ? "Time remaining in quarter (MM:SS)"
+    : "Time elapsed in quarter (MM:SS)";
+
+  // Update forecast info line
+  const period = parseInt(inputs.period.value, 10);
+  const override = getOverrideSecs();
+  const fcst = getQtrForecastSecs();
+  const median = DEFAULT_QTR_SECS[period - 1];
+  if (override != null) {
+    outs.qtrLengthForecast.textContent =
+      `Override: ${secsToMmss(override)} (forecast ${isNaN(fcst) ? "--" : secsToMmss(fcst)}, median ${secsToMmss(median)})`;
+  } else if (!isNaN(fcst)) {
+    outs.qtrLengthForecast.textContent =
+      `Forecast Q${period} length: ${secsToMmss(fcst)} (median ${secsToMmss(median)})`;
+  } else {
+    outs.qtrLengthForecast.textContent =
+      `Q${period} length: using ${secsToMmss(median)} median`;
+  }
+
+  // Whole-game score text
+  const hg = intVal(inputs.homeGoals), hb = intVal(inputs.homeBehinds);
+  const ag = intVal(inputs.awayGoals), ab = intVal(inputs.awayBehinds);
+  if (![hg,hb,ag,ab].some(isNaN)) {
+    outs.wholeGameScoreText.innerHTML =
+      `<div>H: ${hg}.${hb} (${6*hg+hb})</div><div>A: ${ag}.${ab} (${6*ag+ab})</div>`;
+  } else {
+    outs.wholeGameScoreText.textContent = "";
+  }
+
+  // Quarter-score text
+  const qsc = getQtrScoring();
+  if (qsc) {
+    const hp = 6*qsc.homeQtrGoals + qsc.homeQtrBehinds;
+    const ap = 6*qsc.awayQtrGoals + qsc.awayQtrBehinds;
+    outs.qtrScoreText.innerHTML =
+      `<div style="margin-top:2px;"><b>This Q so far:</b></div>
+       <div>H: ${qsc.homeQtrGoals}.${qsc.homeQtrBehinds} (${hp})</div>
+       <div>A: ${qsc.awayQtrGoals}.${qsc.awayQtrBehinds} (${ap})</div>`;
+  } else {
+    // Show warning if start-of-qtr scores exceed whole-game scores
+    const allScoresGiven = ![hg,hb,ag,ab,
+      intVal(inputs.homeGoalsQ),intVal(inputs.homeBehindsQ),
+      intVal(inputs.awayGoalsQ),intVal(inputs.awayBehindsQ)].some(isNaN);
+    if (allScoresGiven) {
+      outs.qtrScoreText.innerHTML =
+        `<div class="qtr-warning">Start-of-quarter scores exceed whole-game scores.</div>`;
+    } else {
+      outs.qtrScoreText.textContent = "";
+    }
+  }
+
+  if (!valid) {
+    outs.remFracBadge.className = "rem-frac-badge error";
+    outs.remFracBadge.textContent = "Check your inputs";
+    outs.topRow.innerHTML = "";
+    outs.marginCard.innerHTML = "";
+    outs.totalCard.innerHTML = "";
+    outs.weightsPanel.innerHTML = "";
+    outs.calibPanel.innerHTML = "";
+    return;
+  }
+
+  const pa = predictFor(num(inputs.pregameMarginA), num(inputs.pregameTotalA));
+  const pb = predictFor(num(inputs.pregameMarginB), num(inputs.pregameTotalB));
+
+  // rem_frac badge
+  outs.remFracBadge.className = "rem-frac-badge";
+  const pctRem = pa.rem_frac * 100;
+  outs.remFracBadge.textContent =
+    `rem_frac = ${fmt3(pa.rem_frac)}  (${fmt1(pctRem)}% of regulation remaining)`;
+
+  // Top row: current score + two prob cards
+  const marginText = pa.cur_margin === 0
+    ? "(scores tied)"
+    : `${pa.cur_margin > 0 ? "Home" : "Away"} leads by ${Math.abs(pa.cur_margin)}`;
+  outs.topRow.innerHTML = `
+    <div class="summary-grid">
+      <div class="metric-card">
+        <div class="label">Current score</div>
+        <div class="value-big">${pa.cur_home} - ${pa.cur_away}</div>
+        <div class="interval">${marginText}</div>
+      </div>
+      ${probCard(pa, "A")}
+      ${probCard(pb, "B")}
+    </div>`;
+
+  // Margin card
+  outs.marginCard.innerHTML = `
+    <div class="pred-grid">
+      <div>
+        <div class="pred-col-header">Forecast A</div>
+        <div class="pred-col-body">${intervalBlock(
+          pa.expected_margin,
+          pa.margin_50_lo, pa.margin_50_hi,
+          pa.margin_90_lo, pa.margin_90_hi,
+          pa.margin_95_lo, pa.margin_95_hi)}</div>
+      </div>
+      <div>
+        <div class="pred-col-header">Forecast B</div>
+        <div class="pred-col-body">${intervalBlock(
+          pb.expected_margin,
+          pb.margin_50_lo, pb.margin_50_hi,
+          pb.margin_90_lo, pb.margin_90_hi,
+          pb.margin_95_lo, pb.margin_95_hi)}</div>
+      </div>
+    </div>`;
+
+  // Total card
+  outs.totalCard.innerHTML = `
+    <div class="pred-grid">
+      <div>
+        <div class="pred-col-header">Forecast A</div>
+        <div class="pred-col-body">${intervalBlock(
+          pa.expected_total,
+          pa.total_50_lo, pa.total_50_hi,
+          pa.total_90_lo, pa.total_90_hi,
+          pa.total_95_lo, pa.total_95_hi)}</div>
+      </div>
+      <div>
+        <div class="pred-col-header">Forecast B</div>
+        <div class="pred-col-body">${intervalBlock(
+          pb.expected_total,
+          pb.total_50_lo, pb.total_50_hi,
+          pb.total_90_lo, pb.total_90_hi,
+          pb.total_95_lo, pb.total_95_hi)}</div>
+      </div>
+    </div>`;
+
+  // Weights panel
+  outs.weightsPanel.innerHTML = `
+    <div class="weights-grid">
+      <div class="metric-card">
+        <div class="label">Margin model</div>
+        <div class="kv-row"><span class="k">Current margin: </span><span class="v">${fmt3(1.0)}</span></div>
+        <div class="kv-row"><span class="k">Pre-game margin: </span><span class="v">${fmt3(pa.pregame_weight_m)}</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Totals model</div>
+        <div class="kv-row"><span class="k">Current total: </span><span class="v">${fmt3(1.0)}</span></div>
+        <div class="kv-row"><span class="k">Pre-game total: </span><span class="v">${fmt3(pa.pregame_weight_t)}</span></div>
+        <div class="kv-row"><span class="k">Current Q total: </span><span class="v">${fmt3(pa.cur_qtr_weight_t)}</span></div>
+      </div>
+    </div>`;
+
+  // Calibration panel
+  const m = inRunningMetricsAt(pa.rem_frac);
+  outs.calibPanel.innerHTML = `
+    <div class="calib-grid">
+      <div class="metric-card">
+        <div class="label">Margin (OOS)</div>
+        <div class="kv-row"><span class="k">MAE: </span><span class="v">${fmt1(m.m_mae)}</span></div>
+        <div class="kv-row"><span class="k">RMSE: </span><span class="v">${fmt1(m.m_rmse)}</span></div>
+        <div class="kv-row"><span class="k">Coverage 50/90/95: </span><span class="v">${fmt1(m.m_50)}/${fmt1(m.m_90)}/${fmt1(m.m_95)}</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Total (OOS)</div>
+        <div class="kv-row"><span class="k">MAE: </span><span class="v">${fmt1(m.t_mae)}</span></div>
+        <div class="kv-row"><span class="k">RMSE: </span><span class="v">${fmt1(m.t_rmse)}</span></div>
+        <div class="kv-row"><span class="k">Coverage 50/90/95: </span><span class="v">${fmt1(m.t_50)}/${fmt1(m.t_90)}/${fmt1(m.t_95)}</span></div>
+      </div>
+      <div class="metric-card full-row">
+        <div class="label">P(home wins)</div>
+        <div class="kv-row"><span class="k">Brier: </span><span class="v">${fmt2(m.brier)}</span><span class="k" style="margin-left:18px;">Accuracy: </span><span class="v">${fmt1(m.acc)}%</span></div>
+      </div>
+    </div>`;
+}
+
+// Wire all inputs to the render function
+Object.values(inputs).forEach(el => {
+  el.addEventListener("input", render);
+  el.addEventListener("change", render);
+});
+
+// Initial render
+render();
+</script>
+</body>
+</html>
