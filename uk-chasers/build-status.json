@@ -1,0 +1,15 @@
+{
+  "data_through": "2026-11-20",
+  "checked": "2026-11-26 00:27 AUS Eastern Daylight Time",
+  "episodes": 2406,
+  "players": 9624,
+  "parameters": {
+    "beta": 0.55,
+    "drift": 0.1,
+    "team": 0,
+    "prior": 0.7,
+    "sd": 1,
+    "reference": 18,
+    "level": 0.95
+  }
+}
